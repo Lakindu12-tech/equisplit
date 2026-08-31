@@ -11,7 +11,8 @@ import {
   EditExpenseModal,
   ActivityDrawer,
   AuthModal,
-  BottomNav 
+  BottomNav,
+  PWAReloadPrompt
 } from './components';
 
 const MainContent: React.FC = () => {
@@ -145,6 +146,9 @@ const MainContent: React.FC = () => {
       <div className="sm:hidden">
         <BottomNav />
       </div>
+
+      {/* PWA Update Toast Notification Prompt */}
+      <PWAReloadPrompt />
     </div>
   );
 };

@@ -8,13 +8,13 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       injectRegister: 'auto',
-      includeAssets: ['favicon.ico', 'icons/*.png', 'icons/*.svg'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'icons/*.png', 'icons/*.svg'],
       manifest: {
-        name: 'EquiSplit - Group Expense Optimizer',
+        name: 'EquiSplit - Group Expenses',
         short_name: 'EquiSplit',
-        description: 'Intelligent group expense sharing & deterministic debt optimization',
+        description: 'The ultimate financial engine for group expenses.',
         theme_color: '#060e20',
         background_color: '#060e20',
         display: 'standalone',
@@ -23,7 +23,7 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/icons/icon-192x192.png',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
@@ -35,27 +35,22 @@ export default defineConfig({
             purpose: 'maskable'
           },
           {
-            src: '/icons/icon-512x512.png',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any'
+            purpose: 'any maskable'
           },
           {
             src: '/icons/icon-maskable-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'
-          },
-          {
-            src: '/icons/icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any'
           }
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+        cleanupOutdatedCaches: true,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -92,6 +87,21 @@ export default defineConfig({
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 60 * 24 * 30
+              }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'firebase-storage-receipts',
+              networkTimeoutSeconds: 5,
+              cacheableResponse: {
+                statuses: [0, 200]
+              },
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 14
               }
             }
           }

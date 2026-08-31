@@ -31,3 +31,6 @@ export { BudgetOverview } from './budget/BudgetOverview';
 export { BudgetSettingsModal } from './budget/BudgetSettingsModal';
 export { GroupInviteModal } from './invites/GroupInviteModal';
 export { BankImportModal } from './bank/BankImportModal';
+
+// PWA
+export { PWAReloadPrompt } from './pwa/PWAReloadPrompt';

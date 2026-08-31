@@ -1,17 +1,16 @@
 {
-  "name": "EquiSplit - Group Expense Optimizer",
+  "name": "EquiSplit - Group Expenses",
   "short_name": "EquiSplit",
-  "description": "Intelligent group expense sharing & deterministic debt optimization",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "orientation": "portrait",
+  "description": "The ultimate financial engine for group expenses.",
   "theme_color": "#060e20",
   "background_color": "#060e20",
-  "categories": ["finance", "utilities", "productivity"],
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "start_url": "/",
   "icons": [
     {
-      "src": "/icons/icon-192x192.png",
+      "src": "/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
@@ -23,22 +22,16 @@
       "purpose": "maskable"
     },
     {
-      "src": "/icons/icon-512x512.png",
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/icon-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
     }
   ]
 }
