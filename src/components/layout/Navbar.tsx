@@ -43,7 +43,7 @@ export const Navbar: React.FC = () => {
               <div className="flex flex-col">
                 <span className="font-bold text-lg text-white tracking-tight flex items-center gap-1.5">
                   EquiSplit
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">v2.0</span>
+                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">v3.0</span>
                 </span>
               </div>
             </div>

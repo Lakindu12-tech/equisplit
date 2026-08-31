@@ -33,11 +33,14 @@ export interface Expense {
   groupId: string;
   title: string;
   amount: number;       // In CENTS (e.g. Rs. 100.00 = 10000)
-  payerId: string;
+  payerId: string;      // Primary/Legacy payer ID
+  paidBy?: Record<string, number>; // Multi-Payer: uid -> amountPaid in CENTS
   date: string;
   category: Category;
   splitType: SplitType;
   splits: Record<string, number>; // uid -> amountOwed in CENTS
+  receiptUrl?: string | null;     // Receipt image URL from Firebase Storage or DataURL
+  searchKeywords?: string[];      // Search keywords for fast offline querying
   notes?: string;
   originalCurrency?: string;
   originalAmount?: number;
@@ -85,4 +88,15 @@ export interface CategoryInfo {
   icon: string;
   color: string;
   bgLight: string;
+}
+
+export interface SmartAddDraft {
+  title: string;
+  amount: number; // in CENTS
+  category: Category;
+  payerId: string;
+  paidBy: Record<string, number>;
+  splits: Record<string, number>;
+  splitType: SplitType;
+  participants: string[];
 }

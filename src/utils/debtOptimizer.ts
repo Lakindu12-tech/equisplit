@@ -1,8 +1,19 @@
 import { Expense, Debt, UserBalance } from '../types';
 
 /**
+ * Normalizes an expense's payer information for multi-payer compatibility.
+ * Safeguard: Falls back to legacy { [expense.payerId]: expense.amount } for v1/v2 records.
+ */
+export function normalizePaidBy(expense: Expense): Record<string, number> {
+  if (expense.paidBy && Object.keys(expense.paidBy).length > 0) {
+    return expense.paidBy;
+  }
+  return { [expense.payerId]: expense.amount };
+}
+
+/**
  * Calculates net balances for all members across an array of expenses.
- * All monetary calculations are performed in integer cents.
+ * Supports single-payer and multi-payer transactions in integer cents.
  */
 export function calculateNetBalances(
   memberIds: string[],
@@ -20,15 +31,17 @@ export function calculateNetBalances(
     };
   }
 
-  // Aggregate from expenses
+  // Aggregate from expenses with Multi-Payer normalization
   for (const expense of expenses) {
-    const payerId = expense.payerId;
+    const paidBy = normalizePaidBy(expense);
     
-    // Ensure payer is initialized
-    if (!balances[payerId]) {
-      balances[payerId] = { uid: payerId, totalPaid: 0, totalOwed: 0, netBalance: 0 };
+    // Add amounts paid by each contributor
+    for (const [payerId, amountPaid] of Object.entries(paidBy)) {
+      if (!balances[payerId]) {
+        balances[payerId] = { uid: payerId, totalPaid: 0, totalOwed: 0, netBalance: 0 };
+      }
+      balances[payerId].totalPaid += amountPaid;
     }
-    balances[payerId].totalPaid += expense.amount;
 
     // Add what each participant owes
     for (const [debtorId, amountOwed] of Object.entries(expense.splits)) {
@@ -116,7 +129,7 @@ export function optimizeDebts(
 }
 
 /**
- * Calculates raw (pairwise unsimplified) debts directly from individual expense splits.
+ * Calculates raw (pairwise unsimplified) debts directly from individual expense splits and multi-payers.
  */
 export function calculateRawDebts(
   expenses: Expense[]
@@ -124,12 +137,34 @@ export function calculateRawDebts(
   const pairwiseDebt: Record<string, number> = {}; // "debtor->creditor" -> cents
 
   for (const expense of expenses) {
-    const payerId = expense.payerId;
-    for (const [debtorId, amountOwed] of Object.entries(expense.splits)) {
-      if (debtorId !== payerId && amountOwed > 0) {
-        const key = `${debtorId}->${payerId}`;
-        pairwiseDebt[key] = (pairwiseDebt[key] || 0) + amountOwed;
+    const paidBy = normalizePaidBy(expense);
+    const allParticipants = Array.from(
+      new Set([...Object.keys(paidBy), ...Object.keys(expense.splits)])
+    );
+
+    const creditors: { uid: string; balance: number }[] = [];
+    const debtors: { uid: string; balance: number }[] = [];
+
+    for (const uid of allParticipants) {
+      const net = (paidBy[uid] || 0) - (expense.splits[uid] || 0);
+      if (net > 0) creditors.push({ uid, balance: net });
+      else if (net < 0) debtors.push({ uid, balance: net });
+    }
+
+    let c = 0;
+    let d = 0;
+    while (c < creditors.length && d < debtors.length) {
+      const cr = creditors[c];
+      const db = debtors[d];
+      const settle = Math.min(cr.balance, Math.abs(db.balance));
+      if (settle > 0) {
+        const key = `${db.uid}->${cr.uid}`;
+        pairwiseDebt[key] = (pairwiseDebt[key] || 0) + settle;
       }
+      cr.balance -= settle;
+      db.balance += settle;
+      if (cr.balance === 0) c++;
+      if (db.balance === 0) d++;
     }
   }
 
@@ -276,4 +311,3 @@ export function formatCents(cents: number, currency: string = 'LKR'): string {
   const symbol = symbols[currency] !== undefined ? symbols[currency] : `${currency} `;
   return `${isNegative ? '-' : ''}${symbol}${formattedNumber}`;
 }
-

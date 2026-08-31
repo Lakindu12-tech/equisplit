@@ -10,8 +10,10 @@ import {
   orderBy, 
   limit 
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../lib/firebase';
 import { User, Group, Expense, AuditLog, AuditAction } from '../types';
+import { normalizePaidBy } from '../utils/debtOptimizer';
 
 function sanitizePayload<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') {
@@ -27,6 +29,11 @@ function sanitizePayload<T>(obj: T): T {
     }
   }
   return result as T;
+}
+
+function generateSearchKeywords(title: string, category: string): string[] {
+  const words = title.toLowerCase().split(/[\s,.-]+/).filter(w => w.length > 1);
+  return Array.from(new Set([...words, category.toLowerCase()]));
 }
 
 export class DataStore {
@@ -66,9 +73,9 @@ export class DataStore {
   // --- Real-time Users Subscription ---
   public subscribeToUsers(callback: (users: User[]) => void): () => void {
     try {
-      const q = collection(db, 'users');
+      const q = query(collection(db, 'users'), limit(50));
       return onSnapshot(
-        q, 
+        q,
         (snapshot) => {
           const users = snapshot.docs.map(d => ({ ...d.data() } as User));
           callback(users);
@@ -83,7 +90,7 @@ export class DataStore {
     }
   }
 
-  // --- Real-time Groups Subscription (Scoped by user membership) ---
+  // --- Real-time Groups Subscription ---
   public subscribeToGroups(userId: string, callback: (groups: Group[]) => void): () => void {
     if (!userId) {
       callback([]);
@@ -113,8 +120,15 @@ export class DataStore {
     }
   }
 
-  // --- Real-time Expenses Subscription (Scoped by groupId) ---
-  public subscribeToExpenses(groupId: string, callback: (expenses: Expense[]) => void): () => void {
+  // --- Real-time Expenses Subscription with Flexible Pagination ---
+  public subscribeToExpenses(
+    groupId: string, 
+    pageSizeOrCallback: number | ((expenses: Expense[]) => void),
+    maybeCallback?: (expenses: Expense[]) => void
+  ): () => void {
+    const callback = typeof pageSizeOrCallback === 'function' ? pageSizeOrCallback : (maybeCallback || (() => {}));
+    const pageSize = typeof pageSizeOrCallback === 'number' ? pageSizeOrCallback : 50;
+
     if (!groupId) {
       callback([]);
       return () => {};
@@ -124,7 +138,7 @@ export class DataStore {
       const q = query(
         collection(db, 'expenses'),
         where('groupId', '==', groupId),
-        limit(100)
+        limit(pageSize)
       );
 
       return onSnapshot(
@@ -177,6 +191,28 @@ export class DataStore {
     }
   }
 
+  // --- Firebase Storage Receipt Upload ---
+  public async uploadReceiptImage(
+    groupId: string,
+    expenseId: string,
+    blob: Blob
+  ): Promise<string> {
+    try {
+      const storageRef = ref(storage, `receipts/${groupId}/${expenseId}_${Date.now()}.jpg`);
+      await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
+      const downloadUrl = await getDownloadURL(storageRef);
+      return downloadUrl;
+    } catch (err) {
+      console.warn('Firebase Storage upload fallback:', err);
+      // If offline or storage error, convert blob to data URL fallback
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    }
+  }
+
   // --- Atomic Mutations with Firestore Batch Writes ---
 
   public async addExpense(
@@ -185,9 +221,14 @@ export class DataStore {
   ): Promise<Expense> {
     const id = 'exp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
     const createdAt = Date.now();
+    const paidBy = expenseData.paidBy || { [expenseData.payerId]: expenseData.amount };
+    const searchKeywords = generateSearchKeywords(expenseData.title, expenseData.category);
+
     const newExpense: Expense = {
       ...expenseData,
       id,
+      paidBy,
+      searchKeywords,
       createdAt,
       createdBy: user.uid,
       lastModifiedBy: user.uid,
@@ -224,9 +265,14 @@ export class DataStore {
     user: User
   ): Promise<Expense> {
     const updatedAt = Date.now();
+    const searchKeywords = updatedData.title 
+      ? generateSearchKeywords(updatedData.title, updatedData.category || oldExpense.category)
+      : oldExpense.searchKeywords;
+
     const updatedExpense: Expense = {
       ...oldExpense,
       ...updatedData,
+      searchKeywords,
       lastModifiedBy: user.uid,
       lastModifiedAt: updatedAt,
     };
@@ -287,12 +333,11 @@ export class DataStore {
     groupData: Omit<Group, 'id' | 'createdAt'>,
     user: User
   ): Promise<Group> {
-    const id = 'group-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
-    const createdAt = Date.now();
+    const id = 'group-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
     const newGroup: Group = {
       ...groupData,
       id,
-      createdAt,
+      createdAt: Date.now(),
       createdBy: user.uid,
       admins: [user.uid],
       members: Array.from(new Set([user.uid, ...(groupData.members || [])]))
@@ -319,6 +364,7 @@ export class DataStore {
       title: `🤝 Debt Settlement: ${fromName} paid ${toName}`,
       amount: amountCents,
       payerId: fromUid,
+      paidBy: { [fromUid]: amountCents },
       date: new Date().toISOString().split('T')[0],
       category: 'general',
       splitType: 'EXACT',

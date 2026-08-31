@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
 import { formatCents } from '../../utils/debtOptimizer';
+import { exportGroupPDFReport, exportGroupCSVReport } from '../../utils/exportReports';
+import { SpatialCard } from '../common/SpatialCard';
 import { 
   Scale, 
   ArrowRight, 
@@ -9,7 +11,9 @@ import {
   Sparkles, 
   ShieldCheck, 
   CreditCard,
-  X
+  X,
+  FileDown,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Debt } from '../../types';
 
@@ -18,6 +22,8 @@ export const BalancesLedger: React.FC = () => {
     currentUser, 
     users, 
     currentGroup, 
+    expenses,
+    netBalances,
     simplifiedDebts, 
     rawDebts, 
     isSimplified, 
@@ -47,9 +53,27 @@ export const BalancesLedger: React.FC = () => {
     }
   };
 
+  const handleExportPDF = () => {
+    exportGroupPDFReport(
+      currentGroup,
+      expenses,
+      users,
+      simplifiedDebts,
+      netBalances
+    );
+  };
+
+  const handleExportCSV = () => {
+    exportGroupCSVReport(
+      currentGroup,
+      expenses,
+      users
+    );
+  };
+
   return (
     <div className="space-y-6 pb-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
-      {/* Header & Mode Selector */}
+      {/* Header & Export Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
@@ -57,33 +81,56 @@ export const BalancesLedger: React.FC = () => {
             <span>Balances & Settlement Ledger</span>
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Track exact creditor-debtor paths and settle balances with one click.
+            Track exact creditor-debtor paths and export formal settlement reports.
           </p>
         </div>
 
-        {/* Toggle: Simplified vs Raw Matrix */}
-        <div className="flex items-center p-1 rounded-2xl bg-black/40 border border-white/10 shrink-0">
+        {/* Action Controls: Export PDF, CSV & Mode Switcher */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setIsSimplified(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
-              isSimplified
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            id="btn-export-pdf"
+            onClick={handleExportPDF}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold shadow-sm transition-all active:scale-[0.97]"
+            title="Download PDF Settlement Report"
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Simplified ({simplifiedDebts.length})</span>
+            <FileDown className="w-4 h-4" />
+            <span>PDF Report</span>
           </button>
+
           <button
-            onClick={() => setIsSimplified(false)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
-              !isSimplified
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            id="btn-export-csv"
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition-all active:scale-[0.97]"
+            title="Export CSV Data"
           >
-            <span>Detailed ({rawDebts.length})</span>
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>CSV</span>
           </button>
+
+          {/* Toggle: Simplified vs Raw Matrix */}
+          <div className="flex items-center p-1 rounded-2xl bg-black/40 border border-white/10">
+            <button
+              onClick={() => setIsSimplified(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                isSimplified
+                  ? 'bg-emerald-500 text-black shadow-sm font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Simplified ({simplifiedDebts.length})</span>
+            </button>
+            <button
+              onClick={() => setIsSimplified(false)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                !isSimplified
+                  ? 'bg-emerald-500 text-black shadow-sm font-bold'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>Detailed ({rawDebts.length})</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -93,26 +140,29 @@ export const BalancesLedger: React.FC = () => {
         <p className="text-xs text-slate-300 leading-relaxed">
           <strong className="text-emerald-400 font-semibold">Minimum Cash Flow Engine Active:</strong>{' '}
           {isSimplified
-            ? `Instead of everyone paying multiple people back and forth, debts are mathematically simplified into the fewest possible direct transfers. ${
+            ? `Debts are mathematically reduced into the fewest possible direct transfers via greedy bipartite matching. ${
                 rawDebts.length > simplifiedDebts.length 
-                  ? `(Reduced ${rawDebts.length} raw transactions down to ${simplifiedDebts.length} optimized settlements!)` 
+                  ? `(Reduced ${rawDebts.length} raw transactions down to ${simplifiedDebts.length} optimal settlements!)` 
                   : ''
               }`
-            : 'Displaying direct unsimplified peer-to-peer balance graph.'}
+            : 'Displaying pairwise unsimplified transaction matrix.'}
         </p>
       </div>
 
-      {/* Debt Cards Grid with Hardware-Accelerated Framer Motion */}
+      {/* Spatial 3D Debt Cards Grid */}
       {activeDebts.length === 0 ? (
-        <div className="glass-3d-volumetric rounded-3xl p-12 text-center border border-white/10 flex flex-col items-center justify-center">
+        <SpatialCard
+          depth={20}
+          className="glass-3d-volumetric rounded-3xl p-12 text-center border border-white/10 flex flex-col items-center justify-center"
+        >
           <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
             <CheckCircle2 className="w-8 h-8 text-emerald-400" />
           </div>
           <h3 className="text-lg font-bold text-white">All Balances Settled</h3>
           <p className="text-xs text-slate-400 mt-1 max-w-sm">
-            There are no pending debts in <strong className="text-slate-200">{currentGroup.name}</strong>. Great job keeping finances balanced!
+            There are no pending debts in <strong className="text-slate-200">{currentGroup.name}</strong>. Everything is balanced!
           </p>
-        </div>
+        </SpatialCard>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AnimatePresence>
@@ -124,13 +174,10 @@ export const BalancesLedger: React.FC = () => {
               const isUserInvolved = isUserDebtor || isUserCreditor;
 
               return (
-                <motion.div
+                <SpatialCard
                   key={`${debt.from}-${debt.to}-${index}`}
-                  layout="position"
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                  depth={20}
+                  glowColor={isUserDebtor ? 'rgba(244, 63, 94, 0.2)' : isUserCreditor ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.08)'}
                   className={`p-5 rounded-3xl border transition-all flex flex-col justify-between gap-4 gpu-accel ${
                     isUserDebtor
                       ? 'glass-3d-debt'
@@ -207,7 +254,7 @@ export const BalancesLedger: React.FC = () => {
                       <span>Record Settlement</span>
                     </button>
                   </div>
-                </motion.div>
+                </SpatialCard>
               );
             })}
           </AnimatePresence>
