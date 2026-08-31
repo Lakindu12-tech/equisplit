@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Production build
+dist/
+dist-ssr/
+*.local
+
+# Environment & Secrets (NEVER COMMIT)
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
+*.pem
+*.key
+
+# Firebase CLI configs & debug
+.firebaserc
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Antigravity & Agent Internal Customizations / Skills
+.agents/
+.agent/
+_agents/
+_agent/
+.gemini/
+.claude/
+.cursor/
+.opencode/
+.codegraph/
+.system_generated/
+scratch_stitch/
+scratch/
+brain/
+
+# Documentation & Screenshots (Local only)
+docs/
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# Testing & MCP Cache / Logs
+.playwright-mcp/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+*.log
+
+# Editor & OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db

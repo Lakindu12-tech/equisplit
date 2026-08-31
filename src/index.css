@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;      /* #060e20 Deep Obsidian */
+    --foreground: 226 90% 92%;     /* #dae2fd Light Slate */
+    --card: 224 37% 12%;           /* #131b2e Surface low */
+    --card-foreground: 226 90% 92%;
+    --primary: 158 71% 47%;        /* #10b981 Emerald */
+    --primary-foreground: 160 100% 11%;
+    --primary-hover: 158 64% 52%;
+    --secondary: 224 32% 18%;      /* #1e293b Slate */
+    --secondary-foreground: 226 90% 92%;
+    --muted: 224 25% 20%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 158 71% 47%;
+    --accent-foreground: 160 100% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 224 25% 18%;
+    --input: 224 25% 18%;
+    --ring: 158 71% 47%;
+    --radius: 1rem;
+  }
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #060e20;
+  color: #dae2fd;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.font-heading {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Glassmorphism utility classes */
+.glass-panel {
+  background: rgba(19, 27, 46, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.glass-panel-subtle {
+  background: rgba(23, 31, 51, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-card-glow {
+  position: relative;
+  background: linear-gradient(135deg, rgba(23, 31, 51, 0.8) 0%, rgba(13, 20, 36, 0.8) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  box-shadow: 0 10px 40px -10px rgba(16, 185, 129, 0.12);
+}
+
+.glass-card-debt {
+  position: relative;
+  background: linear-gradient(135deg, rgba(35, 20, 30, 0.8) 0%, rgba(20, 15, 25, 0.8) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 10px 40px -10px rgba(239, 68, 68, 0.12);
+}
+
+.emerald-glow {
+  box-shadow: 0 0 25px rgba(16, 185, 129, 0.35);
+}
+
+.emerald-glow-sm {
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(6, 14, 32, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.4);
+}
