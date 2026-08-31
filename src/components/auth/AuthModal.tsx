@@ -29,13 +29,28 @@ export const AuthModal: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const formatAuthError = (err: any): string => {
+    const code = err?.code || '';
+    const msg = err?.message || '';
+    if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+      return 'Provider disabled in Firebase Console. Go to Firebase Console > Authentication > Sign-in method and enable Anonymous, Email/Password, or Google.';
+    }
+    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+      return 'Invalid email or password.';
+    }
+    if (code === 'auth/email-already-in-use') {
+      return 'An account already exists with this email.';
+    }
+    return msg || 'Authentication error occurred.';
+  };
+
   const handleGoogleLogin = async () => {
     setError(null);
     setIsLoading(true);
     try {
       await loginWithGoogle();
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in with Google');
+      setError(formatAuthError(err));
     } finally {
       setIsLoading(false);
     }
@@ -57,7 +72,7 @@ export const AuthModal: React.FC = () => {
         await signupWithEmail(email, password, displayName);
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      setError(formatAuthError(err));
     } finally {
       setIsLoading(false);
     }
@@ -70,7 +85,7 @@ export const AuthModal: React.FC = () => {
     try {
       await loginAnonymously(guestName.trim() || undefined);
     } catch (err: any) {
-      setError(err.message || 'Failed to start instant session');
+      setError(formatAuthError(err));
     } finally {
       setIsLoading(false);
     }
