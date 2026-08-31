@@ -3,6 +3,7 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
+  writeBatch,
   onSnapshot, 
   query, 
   where, 
@@ -10,275 +11,294 @@ import {
   limit 
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { User, Group, Expense } from '../types';
-import { DEFAULT_USERS, DEFAULT_GROUPS, DEFAULT_EXPENSES } from '../constants/mockData';
+import { User, Group, Expense, AuditLog, AuditAction } from '../types';
 
-const LOCAL_STORAGE_USERS_KEY = 'equisplit_users_v2';
-const LOCAL_STORAGE_GROUPS_KEY = 'equisplit_groups_v2';
-const LOCAL_STORAGE_EXPENSES_KEY = 'equisplit_expenses_v2';
-
-// Cross-tab synchronization channel
-const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
-  ? new BroadcastChannel('equisplit_sync_channel')
-  : null;
-
-function getLocal<T>(key: string, defaultVal: T): T {
-  if (typeof window === 'undefined') return defaultVal;
-  try {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : defaultVal;
-  } catch {
-    return defaultVal;
+function sanitizePayload<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
   }
-}
-
-function setLocal<T>(key: string, val: T): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-    syncChannel?.postMessage({ type: 'SYNC_UPDATE', key });
-  } catch (err) {
-    console.error('LocalStorage write failed:', err);
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizePayload) as unknown as T;
   }
-}
-
-// Initial seed
-if (typeof window !== 'undefined') {
-  if (!localStorage.getItem(LOCAL_STORAGE_USERS_KEY)) {
-    setLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS);
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      result[key] = sanitizePayload(value);
+    }
   }
-  if (!localStorage.getItem(LOCAL_STORAGE_GROUPS_KEY)) {
-    setLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS);
-  }
-  if (!localStorage.getItem(LOCAL_STORAGE_EXPENSES_KEY)) {
-    setLocal(LOCAL_STORAGE_EXPENSES_KEY, DEFAULT_EXPENSES);
-  }
+  return result as T;
 }
 
 export class DataStore {
   private static instance: DataStore;
-  private isFirebaseConnected = false;
 
   public static getInstance(): DataStore {
     if (!DataStore.instance) {
       DataStore.instance = new DataStore();
-      DataStore.instance.seedFirestoreIfEmpty();
     }
     return DataStore.instance;
   }
 
-  private async seedFirestoreIfEmpty(): Promise<void> {
+  // --- User Presence & Profile Management ---
+  public async syncUserProfile(user: User): Promise<void> {
     try {
-      // Seed users
-      for (const u of DEFAULT_USERS) {
-        await setDoc(doc(db, 'users', u.uid), u, { merge: true });
-      }
-      // Seed default groups
-      for (const g of DEFAULT_GROUPS) {
-        await setDoc(doc(db, 'groups', g.id), g, { merge: true });
-      }
-      // Seed default expenses
-      for (const exp of DEFAULT_EXPENSES) {
-        await setDoc(doc(db, 'expenses', exp.id), exp, { merge: true });
-      }
-      console.log('Firestore initialized with live default groups & expenses');
+      await setDoc(doc(db, 'users', user.uid), {
+        ...user,
+        isOnline: true,
+        lastActive: Date.now()
+      }, { merge: true });
     } catch (err) {
-      console.info('Live Firestore seed completed or permissions deferred:', err);
+      console.warn('syncUserProfile warning:', err);
+    }
+  }
+
+  public async updatePresence(uid: string, isOnline: boolean): Promise<void> {
+    try {
+      await setDoc(doc(db, 'users', uid), {
+        isOnline,
+        lastActive: Date.now()
+      }, { merge: true });
+    } catch (err) {
+      console.warn('updatePresence warning:', err);
     }
   }
 
   // --- Real-time Users Subscription ---
   public subscribeToUsers(callback: (users: User[]) => void): () => void {
-    let unsubFirestore: (() => void) | null = null;
-
     try {
       const q = collection(db, 'users');
-      unsubFirestore = onSnapshot(
+      return onSnapshot(
         q, 
         (snapshot) => {
-          if (!snapshot.empty) {
-            this.isFirebaseConnected = true;
-            const users = snapshot.docs.map(d => ({ ...d.data() } as User));
-            callback(users);
-          } else {
-            // Fallback to local
-            callback(getLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS));
-          }
+          const users = snapshot.docs.map(d => ({ ...d.data() } as User));
+          callback(users);
         },
         (error) => {
-          // If Firestore permissions or network fails, gracefully use local
-          callback(getLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS));
+          console.warn('subscribeToUsers listener note:', error);
+          callback([]);
         }
       );
     } catch {
-      callback(getLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS));
+      return () => {};
     }
-
-    // Also listen to local sync events
-    const localHandler = (e: MessageEvent) => {
-      if (e.data?.key === LOCAL_STORAGE_USERS_KEY) {
-        callback(getLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS));
-      }
-    };
-    syncChannel?.addEventListener('message', localHandler);
-
-    // Immediate initial call
-    callback(getLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS));
-
-    return () => {
-      unsubFirestore?.();
-      syncChannel?.removeEventListener('message', localHandler);
-    };
   }
 
-  // --- Real-time Groups Subscription ---
-  public subscribeToGroups(callback: (groups: Group[]) => void): () => void {
-    let unsubFirestore: (() => void) | null = null;
+  // --- Real-time Groups Subscription (Scoped by user membership) ---
+  public subscribeToGroups(userId: string, callback: (groups: Group[]) => void): () => void {
+    if (!userId) {
+      callback([]);
+      return () => {};
+    }
 
     try {
-      const q = query(collection(db, 'groups'), orderBy('createdAt', 'desc'));
-      unsubFirestore = onSnapshot(
+      const q = query(
+        collection(db, 'groups'),
+        where('members', 'array-contains', userId)
+      );
+      return onSnapshot(
         q,
         (snapshot) => {
-          if (!snapshot.empty) {
-            this.isFirebaseConnected = true;
-            const groups = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Group));
-            callback(groups);
-          } else {
-            callback(getLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS));
-          }
+          const groups = snapshot.docs
+            .map(d => ({ ...d.data() } as Group))
+            .sort((a, b) => b.createdAt - a.createdAt);
+          callback(groups);
         },
-        () => {
-          callback(getLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS));
+        (error) => {
+          console.warn('subscribeToGroups listener note:', error);
+          callback([]);
         }
       );
     } catch {
-      callback(getLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS));
+      return () => {};
     }
-
-    const localHandler = (e: MessageEvent) => {
-      if (e.data?.key === LOCAL_STORAGE_GROUPS_KEY) {
-        callback(getLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS));
-      }
-    };
-    syncChannel?.addEventListener('message', localHandler);
-
-    callback(getLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS));
-
-    return () => {
-      unsubFirestore?.();
-      syncChannel?.removeEventListener('message', localHandler);
-    };
   }
 
-  // --- Real-time Expenses Subscription for a Group ---
+  // --- Real-time Expenses Subscription (Scoped by groupId) ---
   public subscribeToExpenses(groupId: string, callback: (expenses: Expense[]) => void): () => void {
-    let unsubFirestore: (() => void) | null = null;
-
-    const filterLocalExpenses = () => {
-      const all = getLocal<Expense[]>(LOCAL_STORAGE_EXPENSES_KEY, DEFAULT_EXPENSES);
-      return all.filter(e => e.groupId === groupId).sort((a, b) => b.createdAt - a.createdAt);
-    };
+    if (!groupId) {
+      callback([]);
+      return () => {};
+    }
 
     try {
-      // Scalable query: indexed with where, orderBy, and limit
       const q = query(
         collection(db, 'expenses'),
         where('groupId', '==', groupId),
-        orderBy('createdAt', 'desc'),
         limit(100)
       );
 
-      unsubFirestore = onSnapshot(
+      return onSnapshot(
         q,
         (snapshot) => {
-          if (!snapshot.empty) {
-            this.isFirebaseConnected = true;
-            const expenses = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Expense));
-            callback(expenses);
-          } else {
-            callback(filterLocalExpenses());
-          }
+          const expenses = snapshot.docs
+            .map(d => ({ ...d.data() } as Expense))
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          callback(expenses);
         },
-        () => {
-          callback(filterLocalExpenses());
+        (error) => {
+          console.warn('subscribeToExpenses listener note:', error);
+          callback([]);
         }
       );
     } catch {
-      callback(filterLocalExpenses());
+      return () => {};
     }
-
-    const localHandler = (e: MessageEvent) => {
-      if (e.data?.key === LOCAL_STORAGE_EXPENSES_KEY) {
-        callback(filterLocalExpenses());
-      }
-    };
-    syncChannel?.addEventListener('message', localHandler);
-
-    callback(filterLocalExpenses());
-
-    return () => {
-      unsubFirestore?.();
-      syncChannel?.removeEventListener('message', localHandler);
-    };
   }
 
-  // --- Mutations ---
-  public async addExpense(expenseData: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense> {
+  // --- Real-time Audit Logs Subscription ---
+  public subscribeToAuditLogs(groupId: string, callback: (logs: AuditLog[]) => void): () => void {
+    if (!groupId) {
+      callback([]);
+      return () => {};
+    }
+
+    try {
+      const q = query(
+        collection(db, 'audit_logs'),
+        where('groupId', '==', groupId),
+        limit(50)
+      );
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          const logs = snapshot.docs
+            .map(d => ({ ...d.data() } as AuditLog))
+            .sort((a, b) => b.timestamp - a.timestamp);
+          callback(logs);
+        },
+        (error) => {
+          console.warn('subscribeToAuditLogs listener note:', error);
+          callback([]);
+        }
+      );
+    } catch {
+      return () => {};
+    }
+  }
+
+  // --- Atomic Mutations with Firestore Batch Writes ---
+
+  public async addExpense(
+    expenseData: Omit<Expense, 'id' | 'createdAt'>,
+    user: User
+  ): Promise<Expense> {
     const id = 'exp-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
     const createdAt = Date.now();
     const newExpense: Expense = {
       ...expenseData,
       id,
       createdAt,
+      createdBy: user.uid,
+      lastModifiedBy: user.uid,
+      lastModifiedAt: createdAt,
     };
 
-    // Update Local Storage
-    const allExpenses = getLocal<Expense[]>(LOCAL_STORAGE_EXPENSES_KEY, DEFAULT_EXPENSES);
-    const updated = [newExpense, ...allExpenses];
-    setLocal(LOCAL_STORAGE_EXPENSES_KEY, updated);
+    const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const auditLog: AuditLog = {
+      id: logId,
+      groupId: expenseData.groupId,
+      entityId: id,
+      action: 'CREATE',
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Member',
+      userAvatar: user.avatarUrl,
+      timestamp: createdAt,
+      description: `Added "${expenseData.title}" for ${expenseData.amount / 100}`,
+      changes: {
+        newState: newExpense
+      }
+    };
 
-    // Sync to Firestore asynchronously
-    try {
-      await setDoc(doc(db, 'expenses', id), newExpense);
-    } catch (err) {
-      console.info('Synced locally, Firestore remote write deferred/optional:', err);
-    }
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'expenses', id), sanitizePayload(newExpense));
+    batch.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+    await batch.commit();
 
     return newExpense;
   }
 
-  public async deleteExpense(expenseId: string): Promise<void> {
-    const allExpenses = getLocal<Expense[]>(LOCAL_STORAGE_EXPENSES_KEY, DEFAULT_EXPENSES);
-    const updated = allExpenses.filter(e => e.id !== expenseId);
-    setLocal(LOCAL_STORAGE_EXPENSES_KEY, updated);
+  public async updateExpense(
+    oldExpense: Expense,
+    updatedData: Partial<Expense>,
+    user: User
+  ): Promise<Expense> {
+    const updatedAt = Date.now();
+    const updatedExpense: Expense = {
+      ...oldExpense,
+      ...updatedData,
+      lastModifiedBy: user.uid,
+      lastModifiedAt: updatedAt,
+    };
 
-    try {
-      await deleteDoc(doc(db, 'expenses', expenseId));
-    } catch (err) {
-      console.info('Deleted locally:', err);
-    }
+    const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const auditLog: AuditLog = {
+      id: logId,
+      groupId: oldExpense.groupId,
+      entityId: oldExpense.id,
+      action: 'UPDATE',
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Member',
+      userAvatar: user.avatarUrl,
+      timestamp: updatedAt,
+      description: `Updated "${updatedExpense.title}"`,
+      changes: {
+        oldState: oldExpense,
+        newState: updatedExpense
+      }
+    };
+
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'expenses', oldExpense.id), sanitizePayload(updatedExpense));
+    batch.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+    await batch.commit();
+
+    return updatedExpense;
   }
 
-  public async createGroup(groupData: Omit<Group, 'id' | 'createdAt'>): Promise<Group> {
+  public async deleteExpense(
+    expense: Expense,
+    user: User
+  ): Promise<void> {
+    const timestamp = Date.now();
+    const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const auditLog: AuditLog = {
+      id: logId,
+      groupId: expense.groupId,
+      entityId: expense.id,
+      action: 'DELETE',
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Member',
+      userAvatar: user.avatarUrl,
+      timestamp,
+      description: `Deleted "${expense.title}"`,
+      changes: {
+        oldState: expense
+      }
+    };
+
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'expenses', expense.id));
+    batch.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+    await batch.commit();
+  }
+
+  public async createGroup(
+    groupData: Omit<Group, 'id' | 'createdAt'>,
+    user: User
+  ): Promise<Group> {
     const id = 'group-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
     const createdAt = Date.now();
     const newGroup: Group = {
       ...groupData,
       id,
       createdAt,
+      createdBy: user.uid,
+      admins: [user.uid],
+      members: Array.from(new Set([user.uid, ...(groupData.members || [])]))
     };
 
-    const allGroups = getLocal<Group[]>(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS);
-    const updated = [newGroup, ...allGroups];
-    setLocal(LOCAL_STORAGE_GROUPS_KEY, updated);
-
-    try {
-      await setDoc(doc(db, 'groups', id), newGroup);
-    } catch (err) {
-      console.info('Created group locally:', err);
-    }
-
+    await setDoc(doc(db, 'groups', id), sanitizePayload(newGroup));
     return newGroup;
   }
 
@@ -288,9 +308,13 @@ export class DataStore {
     toUid: string, 
     amountCents: number,
     fromName: string,
-    toName: string
+    toName: string,
+    user: User
   ): Promise<Expense> {
-    const settlementExpense: Omit<Expense, 'id' | 'createdAt'> = {
+    const id = 'exp-settle-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const createdAt = Date.now();
+    const settlementExpense: Expense = {
+      id,
       groupId,
       title: `🤝 Debt Settlement: ${fromName} paid ${toName}`,
       amount: amountCents,
@@ -301,16 +325,35 @@ export class DataStore {
       splits: {
         [toUid]: amountCents,
       },
-      notes: `Direct cash settlement marked as completed.`,
+      notes: `Direct settlement verified and completed.`,
+      createdAt,
+      createdBy: user.uid,
+      lastModifiedBy: user.uid,
+      lastModifiedAt: createdAt,
     };
 
-    return this.addExpense(settlementExpense);
-  }
+    const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const auditLog: AuditLog = {
+      id: logId,
+      groupId,
+      entityId: id,
+      action: 'SETTLE',
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Member',
+      userAvatar: user.avatarUrl,
+      timestamp: createdAt,
+      description: `Settled debt: ${fromName} paid ${toName}`,
+      changes: {
+        newState: settlementExpense
+      }
+    };
 
-  public resetDemoData(): void {
-    setLocal(LOCAL_STORAGE_USERS_KEY, DEFAULT_USERS);
-    setLocal(LOCAL_STORAGE_GROUPS_KEY, DEFAULT_GROUPS);
-    setLocal(LOCAL_STORAGE_EXPENSES_KEY, DEFAULT_EXPENSES);
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'expenses', id), sanitizePayload(settlementExpense));
+    batch.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+    await batch.commit();
+
+    return settlementExpense;
   }
 }
 

@@ -41,7 +41,7 @@ export const AddExpenseModal: React.FC = () => {
   const [title, setTitle] = useState('');
   const [amountStr, setAmountStr] = useState('');
   const [currency, setCurrency] = useState(groupCurrency);
-  const [payerId, setPayerId] = useState(currentUser.uid);
+  const [payerId, setPayerId] = useState(currentUser?.uid || '');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [category, setCategory] = useState<Category>('food');
   const [notes, setNotes] = useState('');
@@ -64,8 +64,9 @@ export const AddExpenseModal: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!currentGroup) return;
-    // Default equal distribution
+    if (!currentGroup || !currentUser) return;
+    setPayerId(currentUser.uid);
+    setCurrency(currentGroup.currency);
     setSelectedEqualMembers(currentGroup.members);
     
     // Default equal percentages
@@ -82,7 +83,7 @@ export const AddExpenseModal: React.FC = () => {
     setPercentages(initialPcts);
     setShares(initialShares);
     setExactAmounts(initialExact);
-  }, [currentGroup?.id]);
+  }, [currentGroup?.id, isAddExpenseOpen, currentUser?.uid]);
 
   // Derived calculated amount in Group Currency Cents
   const rawInputAmount = parseFloat(amountStr) || 0;
@@ -209,7 +210,7 @@ export const AddExpenseModal: React.FC = () => {
     }
   };
 
-  if (!currentGroup) return null;
+  if (!isAddExpenseOpen || !currentGroup || !currentUser) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in overflow-y-auto">

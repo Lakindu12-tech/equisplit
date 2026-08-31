@@ -1,21 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // User profile access: public read for avatar/name, write by owner
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isMember(groupId) {
+      return isAuthenticated() && 
+        request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+
+    // Users collection: All authenticated users can read directory for member lookup; only owner can write
     match /users/{userId} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
     }
-    
-    // Group access: members only
+
+    // Groups collection: Only group members can read/update; creator matches auth UID; only admins can delete
     match /groups/{groupId} {
-      allow read, write: if true; // In demo/public groups, allow access; or: if request.auth != null && request.auth.uid in resource.data.members;
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.members;
+      allow create: if isAuthenticated() && 
+        request.resource.data.createdBy == request.auth.uid &&
+        request.auth.uid in request.resource.data.members;
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.members;
+      allow delete: if isAuthenticated() && request.auth.uid in resource.data.admins;
     }
-    
-    // Expenses: members of the group can read and create
+
+    // Expenses collection: Only members of parent groupId can read/create/update/delete
     match /expenses/{expenseId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated() && isMember(resource.data.groupId);
+      allow create: if isAuthenticated() && 
+        isMember(request.resource.data.groupId) && 
+        request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuthenticated() && isMember(resource.data.groupId);
+      allow delete: if isAuthenticated() && isMember(resource.data.groupId);
+    }
+
+    // Audit Logs: Immutable append-only audit trail
+    match /audit_logs/{logId} {
+      allow read: if isAuthenticated() && isMember(resource.data.groupId);
+      allow create: if isAuthenticated() && 
+        isMember(request.resource.data.groupId) && 
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

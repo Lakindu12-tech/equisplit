@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
 import { formatCents } from '../../utils/debtOptimizer';
 import { CategoryIcon } from '../common/CategoryIcon';
@@ -8,12 +9,15 @@ import {
   CheckCircle2, 
   ArrowRight, 
   Trash2, 
+  Edit3, 
   Sparkles, 
-  Plus,
-  Scale,
-  Calendar,
-  Layers
+  Plus, 
+  Scale, 
+  Calendar, 
+  Layers, 
+  UserPlus 
 } from 'lucide-react';
+import { Expense } from '../../types';
 
 export const Dashboard: React.FC = () => {
   const { 
@@ -23,14 +27,16 @@ export const Dashboard: React.FC = () => {
     expenses, 
     netBalances, 
     simplifiedDebts, 
-    rawDebts,
     isSimplified, 
     setIsSimplified,
     setIsAddExpenseOpen,
     setIsCreateGroupOpen,
+    setEditingExpense,
     deleteExpense,
     setActiveTab
   } = useApp();
+
+  if (!currentUser) return null;
 
   if (!currentGroup) {
     return (
@@ -60,63 +66,57 @@ export const Dashboard: React.FC = () => {
   const isNegative = myNetCents < 0;
   const isZero = myNetCents === 0;
 
-  // Calculate Group Total Spent
   const totalGroupSpentCents = expenses.reduce((sum, e) => sum + e.amount, 0);
-
-  // Group members details
   const groupMembers = users.filter(u => currentGroup.members.includes(u.uid));
 
-  // Debts related to current user
   const mySimplifiedDebts = simplifiedDebts.filter(
     d => d.from === currentUser.uid || d.to === currentUser.uid
   );
 
   return (
-    <div className="space-y-8 animate-fade-in pb-16">
-      
-      {/* 1. Hero Net Balance & Overview Card */}
+    <div className="space-y-6 pb-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+      {/* Top Banner: Volumetric Hero Balance Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Main Net Balance Glass Card */}
-        <div className={`lg:col-span-2 rounded-3xl p-6 sm:p-8 transition-all relative overflow-hidden ${
-          isPositive 
-            ? 'glass-card-glow' 
-            : isNegative 
-            ? 'glass-card-debt' 
-            : 'glass-panel'
-        }`}>
-          {/* Subtle Ambient Background Glow */}
-          <div className={`absolute -right-16 -top-16 w-64 h-64 rounded-full blur-3xl pointer-events-none opacity-30 ${
-            isPositive ? 'bg-emerald-500' : isNegative ? 'bg-rose-500' : 'bg-blue-500'
-          }`} />
-
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <span className="text-xs uppercase font-mono tracking-widest text-muted-foreground px-3 py-1 rounded-full bg-white/5 border border-white/10">
+        {/* Main User Balance Hero */}
+        <motion.div
+          layout
+          className={`lg:col-span-2 rounded-3xl p-6 sm:p-8 border transition-all ${
+            isPositive
+              ? 'glass-3d-hero'
+              : isNegative
+              ? 'glass-3d-debt'
+              : 'glass-3d-volumetric'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono font-semibold tracking-wider uppercase text-slate-300">
               Personal Net Balance
             </span>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
               <span>Group:</span>
-              <span className="text-white font-medium">{currentGroup.name}</span>
+              <span className="font-semibold text-white truncate max-w-[150px]">{currentGroup.name}</span>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 my-2">
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-4">
             <div>
-              <div className="text-4xl sm:text-5xl font-extrabold font-mono tracking-tight flex items-center gap-3">
-                <span className={
-                  isPositive 
-                    ? 'text-emerald-400' 
-                    : isNegative 
-                    ? 'text-rose-400' 
-                    : 'text-slate-300'
-                }>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={`text-4xl sm:text-5xl font-extrabold tracking-tight font-mono ${
+                    isPositive
+                      ? 'text-emerald-400'
+                      : isNegative
+                      ? 'text-rose-400'
+                      : 'text-white'
+                  }`}
+                >
                   {formatCents(myNetCents, currentGroup.currency)}
                 </span>
-                {isPositive && <TrendingUp className="w-8 h-8 text-emerald-400 inline" />}
-                {isNegative && <TrendingDown className="w-8 h-8 text-rose-400 inline" />}
-                {isZero && <CheckCircle2 className="w-8 h-8 text-emerald-400 inline" />}
+                {isPositive && <TrendingUp className="w-6 h-6 text-emerald-400" />}
+                {isNegative && <TrendingDown className="w-6 h-6 text-rose-400" />}
+                {isZero && <CheckCircle2 className="w-6 h-6 text-emerald-400" />}
               </div>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-xs text-slate-300 mt-2">
                 {isPositive && `Overall, other group members owe you a total of ${formatCents(myNetCents, currentGroup.currency)}.`}
                 {isNegative && `Overall, you owe other group members a total of ${formatCents(Math.abs(myNetCents), currentGroup.currency)}.`}
                 {isZero && 'All your group expenses and debts are completely settled!'}
@@ -125,122 +125,117 @@ export const Dashboard: React.FC = () => {
 
             <button
               onClick={() => setActiveTab('ledger')}
-              className="self-start sm:self-auto px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-sm font-semibold flex items-center gap-2 transition-all hover:gap-3"
+              className="self-start sm:self-center px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white text-xs font-semibold flex items-center gap-2 border border-white/20 transition-all shadow-md"
             >
               <span>View Settlement</span>
-              <ArrowRight className="w-4 h-4 text-emerald-400" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
+          {/* Micro Balance Split */}
           <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-white/10">
-            <div className="p-4 rounded-2xl bg-black/30 border border-white/5">
-              <div className="text-xs text-muted-foreground mb-1">Total You Paid</div>
-              <div className="text-xl font-bold font-mono text-emerald-300">
+            <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+              <span className="text-[11px] text-slate-400 block font-mono">Total You Paid</span>
+              <span className="text-lg font-bold font-mono text-emerald-400">
                 {formatCents(myBalanceObj.totalPaid, currentGroup.currency)}
-              </div>
+              </span>
             </div>
-            <div className="p-4 rounded-2xl bg-black/30 border border-white/5">
-              <div className="text-xs text-muted-foreground mb-1">Your Total Share</div>
-              <div className="text-xl font-bold font-mono text-slate-200">
+            <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+              <span className="text-[11px] text-slate-400 block font-mono">Your Total Share</span>
+              <span className="text-lg font-bold font-mono text-white">
                 {formatCents(myBalanceObj.totalOwed, currentGroup.currency)}
-              </div>
+              </span>
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Group Quick Metrics & Settle Prompt */}
-        <div className="rounded-3xl glass-panel p-6 sm:p-8 flex flex-col justify-between space-y-6">
+        {/* Group Total Spent & Quick Actions */}
+        <div className="glass-3d-volumetric rounded-3xl p-6 sm:p-8 flex flex-col justify-between border border-white/15">
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs uppercase font-mono tracking-widest text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono font-semibold tracking-wider uppercase text-slate-400">
                 Group Spending
               </span>
-              <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                 {expenses.length} Expenses
               </span>
             </div>
-            <div className="text-3xl font-extrabold font-mono text-white mb-2">
-              {formatCents(totalGroupSpentCents, currentGroup.currency)}
+            <div className="mt-3">
+              <span className="text-3xl font-bold font-mono text-white">
+                {formatCents(totalGroupSpentCents, currentGroup.currency)}
+              </span>
+              <p className="text-xs text-slate-400 mt-1">
+                Total expenditure across all {groupMembers.length} group members.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Total expenditure across all {groupMembers.length} active group members.
-            </p>
           </div>
 
-          {/* Quick Action Buttons */}
-          <div className="space-y-3 pt-4 border-t border-white/10">
+          <div className="mt-6 space-y-3">
             <button
+              id="btn-dashboard-add-expense"
               onClick={() => setIsAddExpenseOpen(true)}
-              className="w-full py-3 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-[0.98] text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all"
             >
               <Plus className="w-4 h-4 stroke-[3]" />
               <span>Add New Expense</span>
             </button>
             <button
               onClick={() => setActiveTab('ledger')}
-              className="w-full py-3 px-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium text-sm flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3 px-4 rounded-2xl bg-white/5 hover:bg-white/10 active:scale-[0.98] text-white font-semibold text-xs flex items-center justify-center gap-2 border border-white/10 transition-all"
             >
-              <Scale className="w-4 h-4 text-emerald-400" />
+              <Scale className="w-3.5 h-3.5 text-emerald-400" />
               <span>Settle Up Debts</span>
             </button>
           </div>
         </div>
-
       </div>
 
-      {/* 2. Group Members Balances Row */}
-      <div className="rounded-3xl glass-panel p-6">
+      {/* Group Members Presence Rail */}
+      <div className="glass-panel-subtle rounded-3xl p-5 border border-white/10">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-            <span>Group Members</span>
-            <span className="text-xs text-muted-foreground font-normal">({groupMembers.length})</span>
-          </h3>
-          <span className="text-xs text-muted-foreground">Click member to view status</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-white uppercase tracking-wider">Group Members</span>
+            <span className="text-[11px] font-mono text-slate-400">({groupMembers.length})</span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {groupMembers.map((member) => {
-            const bal = netBalances[member.uid]?.netBalance || 0;
-            const isMemberPositive = bal > 0;
-            const isMemberNegative = bal < 0;
+            const memberBalance = netBalances[member.uid]?.netBalance || 0;
+            const isMe = member.uid === currentUser.uid;
 
             return (
-              <div 
+              <div
                 key={member.uid}
-                className={`p-3 rounded-2xl border transition-all flex items-center gap-3 ${
-                  member.uid === currentUser.uid 
-                    ? 'bg-emerald-500/10 border-emerald-500/30' 
-                    : 'bg-white/5 border-white/5 hover:border-white/10'
-                }`}
+                className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center gap-3 relative overflow-hidden"
               >
-                <div className="relative">
+                <div className="relative shrink-0">
                   <img
                     src={member.avatarUrl}
                     alt={member.displayName}
-                    className="w-10 h-10 rounded-xl object-cover"
+                    className="w-9 h-9 rounded-xl object-cover border border-white/20"
                   />
-                  <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-[#060e20] ${
-                    isMemberPositive 
-                      ? 'bg-emerald-500' 
-                      : isMemberNegative 
-                      ? 'bg-rose-500' 
-                      : 'bg-slate-500'
-                  }`} />
+                  <span 
+                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-[#060e20] ${
+                      member.isOnline ? 'bg-emerald-500 presence-glow-online' : 'bg-slate-500'
+                    }`} 
+                  />
                 </div>
-
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold truncate text-white">
-                    {member.uid === currentUser.uid ? 'You' : member.displayName}
-                  </div>
-                  <div className={`text-xs font-mono font-medium truncate ${
-                    isMemberPositive 
-                      ? 'text-emerald-400' 
-                      : isMemberNegative 
-                      ? 'text-rose-400' 
-                      : 'text-muted-foreground'
-                  }`}>
-                    {bal === 0 ? 'Settled' : formatCents(bal, currentGroup.currency)}
-                  </div>
+                  <span className="text-xs font-semibold text-white truncate block">
+                    {isMe ? 'You' : member.displayName}
+                  </span>
+                  <span
+                    className={`text-[11px] font-mono font-medium truncate block ${
+                      memberBalance > 0
+                        ? 'text-emerald-400'
+                        : memberBalance < 0
+                        ? 'text-rose-400'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {formatCents(memberBalance, currentGroup.currency)}
+                  </span>
                 </div>
               </div>
             );
@@ -248,209 +243,107 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. Debt Optimization & Settlement Preview */}
-      <div className="rounded-3xl glass-panel p-6 sm:p-8">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-white">Settlement Ledger</h3>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-emerald-400" />
-                Min Cash Flow
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Deterministic greedy bipartite debt minimization engine.
-            </p>
-          </div>
-
-          {/* Toggle Simplified Debts */}
-          <div className="flex items-center gap-3 bg-black/40 p-1.5 rounded-2xl border border-white/10 self-start sm:self-auto">
-            <button
-              onClick={() => setIsSimplified(true)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                isSimplified 
-                  ? 'bg-emerald-500 text-black shadow-md' 
-                  : 'text-muted-foreground hover:text-white'
-              }`}
-            >
-              Simplified ({simplifiedDebts.length})
-            </button>
-            <button
-              onClick={() => setIsSimplified(false)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                !isSimplified 
-                  ? 'bg-emerald-500 text-black shadow-md' 
-                  : 'text-muted-foreground hover:text-white'
-              }`}
-            >
-              Detailed Raw ({rawDebts.length})
-            </button>
-          </div>
-        </div>
-
-        {/* Debt Flow Items */}
-        {(isSimplified ? simplifiedDebts : rawDebts).length === 0 ? (
-          <div className="p-8 rounded-2xl bg-white/5 border border-white/5 text-center">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-2" />
-            <div className="font-semibold text-white">Zero Balances Outstanding</div>
-            <div className="text-xs text-muted-foreground mt-1">
-              Everyone is settled up in this group!
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(isSimplified ? simplifiedDebts : rawDebts).map((debt, idx) => {
-              const debtor = users.find(u => u.uid === debt.from);
-              const creditor = users.find(u => u.uid === debt.to);
-              const isMeDebtor = debt.from === currentUser.uid;
-              const isMeCreditor = debt.to === currentUser.uid;
-
-              return (
-                <div 
-                  key={idx}
-                  className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
-                    isMeDebtor 
-                      ? 'bg-rose-500/10 border-rose-500/30' 
-                      : isMeCreditor 
-                      ? 'bg-emerald-500/10 border-emerald-500/30' 
-                      : 'bg-white/5 border-white/5'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex -space-x-2">
-                      <img
-                        src={debtor?.avatarUrl}
-                        alt={debtor?.displayName}
-                        className="w-9 h-9 rounded-xl object-cover ring-2 ring-[#060e20]"
-                      />
-                      <img
-                        src={creditor?.avatarUrl}
-                        alt={creditor?.displayName}
-                        className="w-9 h-9 rounded-xl object-cover ring-2 ring-[#060e20]"
-                      />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        {isMeDebtor ? 'You owe' : `${debtor?.displayName || debt.from} owes`}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        to {isMeCreditor ? 'You' : creditor?.displayName || debt.to}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="text-base font-bold font-mono text-white">
-                      {formatCents(debt.amount, currentGroup.currency)}
-                    </div>
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                      Direct
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 4. Recent Expenses Activity Feed */}
-      <div className="rounded-3xl glass-panel p-6 sm:p-8">
+      {/* Recent Expenses List with Hardware-Accelerated Framer Motion Transitions */}
+      <div className="glass-3d-volumetric rounded-3xl p-6 sm:p-8 border border-white/15">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-bold text-white">Recent Activity</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Categorized expense transactions for this group
-            </p>
+            <h3 className="text-lg font-bold text-white">Expenses & Transactions</h3>
+            <p className="text-xs text-slate-400">Real-time synchronized group transactions</p>
           </div>
           <button
             onClick={() => setIsAddExpenseOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-all"
+            className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-emerald-400 flex items-center gap-1.5 border border-white/10"
           >
-            <Plus className="w-4 h-4" />
-            <span>New Expense</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add</span>
           </button>
         </div>
 
-        {expenses.length === 0 ? (
-          <div className="p-12 text-center rounded-2xl bg-white/5 border border-white/5">
-            <p className="text-muted-foreground text-sm">No expenses recorded yet.</p>
-            <button
-              onClick={() => setIsAddExpenseOpen(true)}
-              className="mt-4 px-4 py-2 rounded-xl bg-emerald-500 text-black font-semibold text-xs"
-            >
-              Add First Expense
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {expenses.map((expense) => {
-              const payer = users.find(u => u.uid === expense.payerId);
-              const isPayerMe = expense.payerId === currentUser.uid;
-              const myShare = expense.splits[currentUser.uid] || 0;
+        <div className="space-y-3">
+          <AnimatePresence initial={false}>
+            {expenses.length === 0 ? (
+              <div className="py-12 text-center text-slate-400">
+                <p className="text-sm">No expenses recorded yet in this group.</p>
+                <p className="text-xs text-slate-500 mt-1">Click "+ Add New Expense" to get started.</p>
+              </div>
+            ) : (
+              expenses.map((expense) => {
+                const payer = users.find(u => u.uid === expense.payerId);
+                const isPaidByMe = expense.payerId === currentUser.uid;
+                const myShare = expense.splits[currentUser.uid] || 0;
 
-              return (
-                <div 
-                  key={expense.id}
-                  className="p-4 rounded-2xl bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-white/10 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
-                >
-                  <div className="flex items-start sm:items-center gap-3.5">
-                    <CategoryIcon category={expense.category} size="md" />
-                    <div>
-                      <div className="font-semibold text-sm text-white group-hover:text-emerald-300 transition-colors">
-                        {expense.title}
+                return (
+                  <motion.div
+                    key={expense.id}
+                    layout="position"
+                    initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                    className="p-4 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/10 hover:border-emerald-400/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 gpu-accel"
+                  >
+                    {/* Left: Category Icon + Title + Payer */}
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="p-3 rounded-2xl bg-black/40 border border-white/10 shrink-0">
+                        <CategoryIcon category={expense.category} size="md" />
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
-                        <span>Paid by <strong className="text-slate-300 font-medium">{isPayerMe ? 'You' : payer?.displayName}</strong></span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {expense.date}
-                        </span>
-                        <span>•</span>
-                        <span className="uppercase text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-slate-300">
-                          {expense.splitType}
-                        </span>
-                        {expense.originalCurrency && expense.originalCurrency !== currentGroup.currency && (
-                          <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                            {expense.originalCurrency} FX
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-bold text-white truncate">{expense.title}</h4>
+                        <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                          <span>Paid by <strong className="text-slate-200">{isPaidByMe ? 'You' : payer?.displayName || 'Member'}</strong></span>
+                          <span>•</span>
+                          <span className="font-mono text-[11px] flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-500" />
+                            {expense.date}
                           </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between sm:justify-end gap-4 self-end sm:self-center">
-                    <div className="text-right">
-                      <div className="font-bold font-mono text-base text-white">
-                        {formatCents(expense.amount, currentGroup.currency)}
-                      </div>
-                      <div className="text-[11px] font-mono text-muted-foreground">
-                        {isPayerMe 
-                          ? <span className="text-emerald-400">You lent {formatCents(expense.amount - myShare, currentGroup.currency)}</span>
-                          : myShare > 0 
-                          ? <span className="text-rose-400">Your share: {formatCents(myShare, currentGroup.currency)}</span>
-                          : <span className="text-slate-400">Not involved</span>
-                        }
+                        </div>
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => deleteExpense(expense.id)}
-                      className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-all"
-                      title="Delete expense"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    {/* Right: Total Amount + Your Share + Edit/Delete Actions */}
+                    <div className="flex items-center justify-between sm:justify-end gap-6 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                      <div className="text-right">
+                        <span className="text-base font-extrabold font-mono text-white block">
+                          {formatCents(expense.amount, currentGroup.currency)}
+                        </span>
+                        <span className="text-[11px] text-slate-400 block">
+                          {isPaidByMe 
+                            ? `You lent ${formatCents(expense.amount - myShare, currentGroup.currency)}`
+                            : myShare > 0 
+                            ? `Your share: ${formatCents(myShare, currentGroup.currency)}`
+                            : 'Not involved'}
+                        </span>
+                      </div>
+
+                      {/* Edit & Delete Action Buttons */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingExpense(expense)}
+                          title="Edit Expense"
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-amber-300 transition-all"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete expense "${expense.title}"?`)) {
+                              deleteExpense(expense);
+                            }
+                          }}
+                          title="Delete Expense"
+                          className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })
+            )}
+          </AnimatePresence>
+        </div>
       </div>
-
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
 import { CATEGORIES } from '../../constants/categories';
 import { Category, CategoryInfo } from '../../types';
@@ -44,107 +45,96 @@ export const CategoryBreakdown: React.FC = () => {
   const groupMembers = users.filter(u => currentGroup.members.includes(u.uid));
 
   return (
-    <div className="space-y-8 animate-fade-in pb-16">
-      
+    <div className="space-y-6 pb-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
           <PieChart className="w-6 h-6 text-emerald-400" />
           <span>Spending Analytics & Insights</span>
         </h2>
-        <p className="text-sm text-muted-foreground mt-1">
+        <p className="text-sm text-slate-400 mt-1">
           Detailed category breakdown and member expenditure distribution.
         </p>
       </div>
 
-      {/* Top Cards: Total Spent, Avg per member, Category Count */}
+      {/* Top Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-6 rounded-3xl glass-panel">
-          <div className="flex items-center gap-2 text-xs uppercase font-mono text-muted-foreground mb-1">
-            <DollarSign className="w-4 h-4 text-emerald-400" />
-            <span>Total Group Spend</span>
+        <div className="glass-3d-volumetric p-5 rounded-3xl border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-mono uppercase tracking-wider">Total Group Spent</span>
+            <Wallet className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-3xl font-extrabold font-mono text-white">
+          <div className="text-2xl font-extrabold font-mono text-white">
             {formatCents(totalSpentCents, currentGroup.currency)}
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Across {expenses.length} total entries
-          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            Across {expenses.length} recorded items
+          </span>
         </div>
 
-        <div className="p-6 rounded-3xl glass-panel">
-          <div className="flex items-center gap-2 text-xs uppercase font-mono text-muted-foreground mb-1">
-            <Wallet className="w-4 h-4 text-teal-400" />
-            <span>Average Per Person</span>
+        <div className="glass-3d-volumetric p-5 rounded-3xl border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-mono uppercase tracking-wider">Avg / Member</span>
+            <DollarSign className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-3xl font-extrabold font-mono text-white">
-            {groupMembers.length > 0
-              ? formatCents(Math.round(totalSpentCents / groupMembers.length), currentGroup.currency)
-              : '$0.00'
-            }
+          <div className="text-2xl font-extrabold font-mono text-emerald-400">
+            {formatCents(
+              groupMembers.length > 0 ? Math.round(totalSpentCents / groupMembers.length) : 0,
+              currentGroup.currency
+            )}
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            Split evenly across {groupMembers.length} members
-          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            Per person target share
+          </span>
         </div>
 
-        <div className="p-6 rounded-3xl glass-panel">
-          <div className="flex items-center gap-2 text-xs uppercase font-mono text-muted-foreground mb-1">
-            <TrendingUp className="w-4 h-4 text-amber-400" />
-            <span>Active Categories</span>
+        <div className="glass-3d-volumetric p-5 rounded-3xl border border-white/10">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-mono uppercase tracking-wider">Active Categories</span>
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-3xl font-extrabold font-mono text-white">
-            {sortedCategories.length} <span className="text-sm font-normal text-muted-foreground">/ 7</span>
+          <div className="text-2xl font-extrabold font-mono text-white">
+            {sortedCategories.length}
           </div>
-          <div className="text-xs text-muted-foreground mt-1">
-            {sortedCategories[0] ? `Top: ${CATEGORIES[sortedCategories[0]].label}` : 'No expenses yet'}
-          </div>
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            {sortedCategories.length > 0 ? `Top: ${sortedCategories[0]}` : 'No expenses yet'}
+          </span>
         </div>
       </div>
 
-      {/* Category Progress Bars */}
-      <div className="rounded-3xl glass-panel p-6 sm:p-8 space-y-6">
-        <h3 className="text-lg font-bold text-white">Expense Distribution by Category</h3>
+      {/* Category Breakdown Progress */}
+      <div className="glass-3d-volumetric rounded-3xl p-6 border border-white/15">
+        <h3 className="text-base font-bold text-white mb-4">Category Distribution</h3>
 
         {sortedCategories.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground text-sm">
-            No expenses categorized yet.
-          </div>
+          <p className="text-xs text-slate-400 py-8 text-center">No categorized expenses in this group yet.</p>
         ) : (
           <div className="space-y-4">
             {sortedCategories.map((catKey) => {
-              const cat = CATEGORIES[catKey];
-              const amount = categoryTotals[catKey];
-              const percentage = totalSpentCents > 0 
-                ? ((amount / totalSpentCents) * 100).toFixed(1) 
-                : '0.0';
+              const catAmount = categoryTotals[catKey];
+              const pct = totalSpentCents > 0 ? (catAmount / totalSpentCents) * 100 : 0;
+              const catMeta = CATEGORIES[catKey];
 
               return (
-                <div key={catKey} className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2.5">
+                <div key={catKey} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
                       <CategoryIcon category={catKey} size="sm" />
-                      <span className="font-semibold text-white">{cat.label}</span>
+                      <span className="font-semibold text-white">{catMeta?.label || catKey}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {percentage}%
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-white">
+                        {formatCents(catAmount, currentGroup.currency)}
                       </span>
-                      <span className="font-bold font-mono text-white">
-                        {formatCents(amount, currentGroup.currency)}
-                      </span>
+                      <span className="font-mono text-slate-400 text-[11px]">({pct.toFixed(1)}%)</span>
                     </div>
                   </div>
 
-                  {/* Visual Progress Bar */}
-                  <div className="w-full h-2 rounded-full bg-black/40 overflow-hidden border border-white/5">
+                  {/* Hardware-accelerated progress bar */}
+                  <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden border border-white/5">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${percentage}%`,
-                        backgroundColor: cat.color,
-                        boxShadow: `0 0 10px ${cat.color}88`,
-                      }}
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                      style={{ width: `${pct}%` }}
                     />
                   </div>
                 </div>
@@ -155,31 +145,39 @@ export const CategoryBreakdown: React.FC = () => {
       </div>
 
       {/* Member Expenditure Breakdown */}
-      <div className="rounded-3xl glass-panel p-6 sm:p-8">
-        <h3 className="text-lg font-bold text-white mb-6">Payer Contribution Share</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="glass-3d-volumetric rounded-3xl p-6 border border-white/15">
+        <h3 className="text-base font-bold text-white mb-4">Member Contributions (Paid Upfront)</h3>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
           {groupMembers.map((member) => {
             const paid = memberSpentTotals[member.uid] || 0;
-            const pct = totalSpentCents > 0 ? ((paid / totalSpentCents) * 100).toFixed(0) : '0';
+            const pct = totalSpentCents > 0 ? (paid / totalSpentCents) * 100 : 0;
 
             return (
-              <div key={member.uid} className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
-                <div className="flex items-center gap-3">
-                  <img src={member.avatarUrl} alt="" className="w-10 h-10 rounded-xl object-cover" />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-sm text-white truncate">{member.displayName}</div>
-                    <div className="text-xs text-muted-foreground">{pct}% of total spend</div>
+              <div
+                key={member.uid}
+                className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={member.avatarUrl}
+                    alt={member.displayName}
+                    className="w-8 h-8 rounded-xl object-cover border border-white/20 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-white truncate block">{member.displayName}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">{pct.toFixed(0)}% of group</span>
                   </div>
                 </div>
-                <div className="text-lg font-bold font-mono text-emerald-400">
+
+                <span className="text-xs font-mono font-bold text-emerald-400 shrink-0">
                   {formatCents(paid, currentGroup.currency)}
-                </div>
+                </span>
               </div>
             );
           })}
         </div>
       </div>
-
     </div>
   );
 };
