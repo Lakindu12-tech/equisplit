@@ -13,7 +13,7 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
-import { User, Group, Expense, Debt, UserBalance, AuditLog } from '../types';
+import { User, Group, Expense, Debt, UserBalance, AuditLog, RecurringExpense } from '../types';
 import { store } from '../services/store';
 import { calculateNetBalances, optimizeDebts, calculateRawDebts } from '../utils/debtOptimizer';
 import confetti from 'canvas-confetti';
@@ -31,6 +31,7 @@ interface AppContextType {
   linkAccountWithEmail: (e: string, p: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUserDisplayName: (name: string) => Promise<void>;
+  updateUserBankDetails: (details: User['bankDetails']) => Promise<void>;
 
   // Data & Members
   users: User[];
@@ -39,6 +40,7 @@ interface AppContextType {
   setCurrentGroup: (group: Group | null) => void;
   expenses: Expense[];
   auditLogs: AuditLog[];
+  recurringExpenses: RecurringExpense[];
   netBalances: Record<string, UserBalance>;
   simplifiedDebts: Debt[];
   rawDebts: Debt[];
@@ -50,6 +52,7 @@ interface AppContextType {
   updateExpense: (oldExp: Expense, updated: Partial<Expense>) => Promise<void>;
   deleteExpense: (expense: Expense) => Promise<void>;
   createGroup: (group: Omit<Group, 'id' | 'createdAt'>) => Promise<Group>;
+  createRecurringExpense: (recData: Omit<RecurringExpense, 'id' | 'createdAt'>) => Promise<void>;
   settleDebt: (fromUid: string, toUid: string, amountCents: number) => Promise<void>;
 
   // UI State
@@ -59,6 +62,10 @@ interface AppContextType {
   setIsCreateGroupOpen: (open: boolean) => void;
   isActivityOpen: boolean;
   setIsActivityOpen: (open: boolean) => void;
+  isInviteModalOpen: boolean;
+  setIsInviteModalOpen: (open: boolean) => void;
+  isBankImportOpen: boolean;
+  setIsBankImportOpen: (open: boolean) => void;
   editingExpense: Expense | null;
   setEditingExpense: (exp: Expense | null) => void;
   activeTab: 'dashboard' | 'ledger' | 'insights';
@@ -77,27 +84,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentGroup, setCurrentGroup] = useState<Group | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [isSimplified, setIsSimplified] = useState(true);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
 
-  // Modals & Drawers
+  const [isSimplified, setIsSimplified] = useState(true);
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isBankImportOpen, setIsBankImportOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger' | 'insights'>('dashboard');
 
-  const groupsRef = useRef<Group[]>(groups);
-  groupsRef.current = groups;
-
-  // 1. Listen for Firebase Auth State Changes
+  // 1. Firebase Auth Observer
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setFirebaseUser(fbUser);
       if (fbUser) {
+        const customName = localStorage.getItem('equisplit_guest_name') || fbUser.displayName || 'Member';
         const userObj: User = {
           uid: fbUser.uid,
-          displayName: fbUser.displayName || (fbUser.isAnonymous ? 'Guest Member' : fbUser.email?.split('@')[0] || 'Member'),
-          email: fbUser.email || (fbUser.isAnonymous ? 'guest@equisplit.local' : ''),
+          displayName: customName,
+          email: fbUser.email || (fbUser.isAnonymous ? 'Guest User' : ''),
           avatarUrl: fbUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${fbUser.uid}`,
           isOnline: true,
           lastActive: Date.now(),
@@ -106,10 +113,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await store.syncUserProfile(userObj);
       } else {
         setCurrentUser(null);
-        setGroups([]);
-        setCurrentGroup(null);
-        setExpenses([]);
-        setAuditLogs([]);
       }
       setIsAuthLoading(false);
     });
@@ -120,7 +123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 2. Subscribe to Users Directory
   useEffect(() => {
     if (!currentUser) return;
-    const unsub = store.subscribeToUsers((fetchedUsers) => {
+    const unsub = store.subscribeToUsers((fetchedUsers: User[]) => {
       setUsers(fetchedUsers);
     });
     return () => unsub();
@@ -129,10 +132,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // 3. Subscribe to Groups for the authenticated user
   useEffect(() => {
     if (!currentUser) return;
-    const unsub = store.subscribeToGroups(currentUser.uid, (fetchedGroups) => {
+    const unsub = store.subscribeToGroups(currentUser.uid, (fetchedGroups: Group[]) => {
       setGroups(fetchedGroups);
       if (fetchedGroups.length > 0) {
-        // Retain selection if valid, otherwise pick first
         setCurrentGroup((prev) => {
           if (prev && fetchedGroups.some(g => g.id === prev.id)) {
             return fetchedGroups.find(g => g.id === prev.id) || prev;
@@ -147,105 +149,129 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => unsub();
   }, [currentUser]);
 
-  // 4. Subscribe to Expenses and Audit Logs for the selected Group
+  // 4. Handle ?joinGroup= URL parameter for Zero-Friction Invites
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinGroupId = urlParams.get('joinGroup');
+
+    if (joinGroupId) {
+      const handleAutoJoin = async () => {
+        let user = currentUser;
+        if (!user) {
+          const cred = await signInAnonymously(auth);
+          const guestUser: User = {
+            uid: cred.user.uid,
+            displayName: 'Invited Companion',
+            email: 'Guest User',
+            avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.user.uid}`,
+            isOnline: true,
+            lastActive: Date.now()
+          };
+          await store.syncUserProfile(guestUser);
+          user = guestUser;
+        }
+        await store.joinGroup(joinGroupId, user);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      };
+
+      handleAutoJoin();
+    }
+  }, [currentUser?.uid]);
+
+  // 5. Subscribe to Expenses, Audit Logs, and Recurring Bills for Selected Group
   useEffect(() => {
     if (!currentGroup) {
       setExpenses([]);
       setAuditLogs([]);
+      setRecurringExpenses([]);
       return;
     }
 
-    const unsubExpenses = store.subscribeToExpenses(currentGroup.id, (fetchedExpenses) => {
+    const unsubExpenses = store.subscribeToExpenses(currentGroup.id, 50, (fetchedExpenses: Expense[]) => {
       setExpenses(fetchedExpenses);
     });
 
-    const unsubLogs = store.subscribeToAuditLogs(currentGroup.id, (fetchedLogs) => {
+    const unsubLogs = store.subscribeToAuditLogs(currentGroup.id, (fetchedLogs: AuditLog[]) => {
       setAuditLogs(fetchedLogs);
     });
+
+    const unsubRecurring = store.subscribeToRecurringExpenses(currentGroup.id, (bills: RecurringExpense[]) => {
+      setRecurringExpenses(bills);
+    });
+
+    // Run Idempotent Client-Side Recurring Bill Processor
+    if (currentUser) {
+      store.processDueRecurringExpenses(currentGroup.id, currentUser);
+    }
 
     return () => {
       unsubExpenses();
       unsubLogs();
+      unsubRecurring();
     };
-  }, [currentGroup?.id]);
+  }, [currentGroup?.id, currentUser?.uid]);
 
-  // 5. Auth Handlers
+  // Auth Methods
   const loginWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    setIsAuthLoading(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    setIsAuthLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } finally {
+      setIsAuthLoading(false);
+    }
   };
 
   const signupWithEmail = async (email: string, pass: string, name: string) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    if (cred.user) {
-      await updateProfile(cred.user, { displayName: name });
-      const userObj: User = {
-        uid: cred.user.uid,
-        displayName: name,
-        email: email,
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.user.uid}`,
-        isOnline: true,
-        lastActive: Date.now()
-      };
-      setCurrentUser(userObj);
-      await store.syncUserProfile(userObj);
+    setIsAuthLoading(true);
+    try {
+      const res = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(res.user, { displayName: name });
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
-  const loginAnonymously = async (name?: string) => {
-    const cred = await signInAnonymously(auth);
-    if (cred.user) {
-      const displayName = name || `Guest-${Math.random().toString(36).substring(2, 6)}`;
-      await updateProfile(cred.user, { displayName });
-      const userObj: User = {
-        uid: cred.user.uid,
-        displayName,
-        email: 'guest@equisplit.local',
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.user.uid}`,
-        isOnline: true,
-        lastActive: Date.now()
-      };
-      setCurrentUser(userObj);
-      await store.syncUserProfile(userObj);
+  const loginAnonymously = async (customName?: string) => {
+    setIsAuthLoading(true);
+    try {
+      if (customName) {
+        localStorage.setItem('equisplit_guest_name', customName);
+      }
+      await signInAnonymously(auth);
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
-  // Requirement: Link anonymous account without creating a new UID!
   const linkAccountWithGoogle = async () => {
-    if (!auth.currentUser) return;
-    const cred = await linkWithPopup(auth.currentUser, googleProvider);
-    if (cred.user) {
-      const updated: User = {
-        uid: cred.user.uid,
-        displayName: cred.user.displayName || 'Member',
-        email: cred.user.email || '',
-        avatarUrl: cred.user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.user.uid}`,
-        isOnline: true,
-        lastActive: Date.now(),
-      };
-      setCurrentUser(updated);
-      await store.syncUserProfile(updated);
+    if (!auth.currentUser || !auth.currentUser.isAnonymous) return;
+    try {
+      await linkWithPopup(auth.currentUser, googleProvider);
+    } catch (err: any) {
+      console.error('linkWithPopup Google error:', err);
+      throw err;
     }
   };
 
   const linkAccountWithEmail = async (email: string, pass: string) => {
-    if (!auth.currentUser) return;
-    const credential = EmailAuthProvider.credential(email, pass);
-    const cred = await linkWithCredential(auth.currentUser, credential);
-    if (cred.user) {
-      const updated: User = {
-        uid: cred.user.uid,
-        displayName: cred.user.displayName || email.split('@')[0],
-        email: email,
-        avatarUrl: cred.user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.user.uid}`,
-        isOnline: true,
-        lastActive: Date.now(),
-      };
-      setCurrentUser(updated);
-      await store.syncUserProfile(updated);
+    if (!auth.currentUser || !auth.currentUser.isAnonymous) return;
+    try {
+      const cred = EmailAuthProvider.credential(email, pass);
+      await linkWithCredential(auth.currentUser, cred);
+    } catch (err: any) {
+      console.error('linkWithCredential Email error:', err);
+      throw err;
     }
   };
 
@@ -253,63 +279,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (currentUser) {
       await store.updatePresence(currentUser.uid, false);
     }
+    localStorage.removeItem('equisplit_guest_name');
     await signOut(auth);
   };
 
   const updateUserDisplayName = async (name: string) => {
-    if (!auth.currentUser || !currentUser) return;
-    await updateProfile(auth.currentUser, { displayName: name });
+    if (!currentUser) return;
+    if (auth.currentUser && !auth.currentUser.isAnonymous) {
+      await updateProfile(auth.currentUser, { displayName: name });
+    }
     const updated = { ...currentUser, displayName: name };
     setCurrentUser(updated);
     await store.syncUserProfile(updated);
   };
 
-  // 6. Action Handlers with Optimistic Updates
-  const addExpense = async (expenseData: Omit<Expense, 'id' | 'createdAt'>) => {
+  const updateUserBankDetails = async (bankDetails: User['bankDetails']) => {
     if (!currentUser) return;
+    const updated = { ...currentUser, bankDetails };
+    setCurrentUser(updated);
+    await store.updateUserBankDetails(currentUser.uid, bankDetails);
+  };
+
+  // Group & Expense Operations
+  const createGroup = async (groupData: Omit<Group, 'id' | 'createdAt'>): Promise<Group> => {
+    if (!currentUser) throw new Error('Not authenticated');
+    const newG = await store.createGroup(groupData, currentUser);
+    setCurrentGroup(newG);
+    return newG;
+  };
+
+  const addExpense = async (expenseData: Omit<Expense, 'id' | 'createdAt'>) => {
+    if (!currentUser) throw new Error('Not authenticated');
     await store.addExpense(expenseData, currentUser);
   };
 
-  const updateExpense = async (oldExp: Expense, updatedData: Partial<Expense>) => {
-    if (!currentUser) return;
-    await store.updateExpense(oldExp, updatedData, currentUser);
+  const createRecurringExpense = async (recData: Omit<RecurringExpense, 'id' | 'createdAt'>) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    await store.createRecurringExpense(recData, currentUser);
+  };
+
+  const updateExpense = async (oldExp: Expense, updated: Partial<Expense>) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    await store.updateExpense(oldExp, updated, currentUser);
   };
 
   const deleteExpense = async (expense: Expense) => {
-    if (!currentUser) return;
+    if (!currentUser) throw new Error('Not authenticated');
     await store.deleteExpense(expense, currentUser);
   };
 
-  const createGroup = async (groupData: Omit<Group, 'id' | 'createdAt'>): Promise<Group> => {
-    if (!currentUser) throw new Error('Must be logged in');
-    const newGroup = await store.createGroup(groupData, currentUser);
-    setCurrentGroup(newGroup);
-    return newGroup;
-  };
-
   const settleDebt = async (fromUid: string, toUid: string, amountCents: number) => {
-    if (!currentGroup || !currentUser) return;
-    const fromUser = users.find(u => u.uid === fromUid)?.displayName || 'Member';
-    const toUser = users.find(u => u.uid === toUid)?.displayName || 'Member';
+    if (!currentUser || !currentGroup) return;
+    const fromName = users.find(u => u.uid === fromUid)?.displayName || 'Debtor';
+    const toName = users.find(u => u.uid === toUid)?.displayName || 'Creditor';
 
-    await store.settleDebt(currentGroup.id, fromUid, toUid, amountCents, fromUser, toUser, currentUser);
+    await store.settleDebt(currentGroup.id, fromUid, toUid, amountCents, fromName, toName, currentUser);
 
-    try {
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#10b981', '#34d399', '#6ee7b7', '#f59e0b', '#38bdf8'],
-      });
-    } catch {
-      // ignore
-    }
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
   };
 
-  // 7. Computed Balances & Simplified Debts
-  const groupMembers = currentGroup ? currentGroup.members : [];
-  const netBalances = calculateNetBalances(groupMembers, expenses);
-  const simplifiedDebts = optimizeDebts(groupMembers, expenses);
+  // Derived Calculations
+  const memberIds = currentGroup?.members || [];
+  const netBalances = calculateNetBalances(memberIds, expenses);
+  const simplifiedDebts = optimizeDebts(memberIds, expenses);
   const rawDebts = calculateRawDebts(expenses);
 
   return (
@@ -326,6 +362,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         linkAccountWithEmail,
         logout,
         updateUserDisplayName,
+        updateUserBankDetails,
 
         users,
         groups,
@@ -333,6 +370,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCurrentGroup,
         expenses,
         auditLogs,
+        recurringExpenses,
         netBalances,
         simplifiedDebts,
         rawDebts,
@@ -343,6 +381,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateExpense,
         deleteExpense,
         createGroup,
+        createRecurringExpense,
         settleDebt,
 
         isAddExpenseOpen,
@@ -351,6 +390,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsCreateGroupOpen,
         isActivityOpen,
         setIsActivityOpen,
+        isInviteModalOpen,
+        setIsInviteModalOpen,
+        isBankImportOpen,
+        setIsBankImportOpen,
         editingExpense,
         setEditingExpense,
         activeTab,
@@ -362,7 +405,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 };
 
-export const useApp = (): AppContextType => {
+export const useApp = () => {
   const context = useContext(AppContext);
   if (!context) {
     throw new Error('useApp must be used within an AppProvider');

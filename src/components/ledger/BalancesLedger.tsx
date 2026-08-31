@@ -13,7 +13,12 @@ import {
   CreditCard,
   X,
   FileDown,
-  FileSpreadsheet
+  FileSpreadsheet,
+  MessageSquare,
+  Building,
+  Copy,
+  Check,
+  QrCode
 } from 'lucide-react';
 import { Debt } from '../../types';
 
@@ -32,6 +37,8 @@ export const BalancesLedger: React.FC = () => {
   } = useApp();
 
   const [selectedDebtToSettle, setSelectedDebtToSettle] = useState<Debt | null>(null);
+  const [selectedBankTransferDebt, setSelectedBankTransferDebt] = useState<Debt | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isSettling, setIsSettling] = useState(false);
 
   if (!currentGroup || !currentUser) return null;
@@ -71,6 +78,24 @@ export const BalancesLedger: React.FC = () => {
     );
   };
 
+  const handleSendWhatsAppReminder = (debt: Debt) => {
+    const debtor = users.find(u => u.uid === debt.from);
+    const creditor = users.find(u => u.uid === debt.to);
+    const formattedAmt = formatCents(debt.amount, currentGroup.currency);
+
+    const message = encodeURIComponent(
+      `Hi ${debtor?.displayName || 'there'}! 👋 Just a quick reminder on EquiSplit for "${currentGroup.name}": your share of ${formattedAmt} is due to ${creditor?.displayName || 'me'}. Let's settle up whenever you can! 👍`
+    );
+
+    window.open(`https://wa.me/?text=${message}`, '_blank');
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2500);
+  };
+
   return (
     <div className="space-y-6 pb-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
       {/* Header & Export Actions */}
@@ -81,7 +106,7 @@ export const BalancesLedger: React.FC = () => {
             <span>Balances & Settlement Ledger</span>
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Track exact creditor-debtor paths and export formal settlement reports.
+            Track creditor-debtor paths, export settlement reports, and initiate localized bank transfers.
           </p>
         </div>
 
@@ -234,13 +259,30 @@ export const BalancesLedger: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Settle Action */}
+                  {/* Settle Action & Deep Links */}
                   <div className="flex items-center justify-between pt-3 border-t border-white/10">
-                    <span className="text-[11px] text-slate-400">
-                      {isUserDebtor && 'You must pay this amount'}
-                      {isUserCreditor && 'You are owed this amount'}
-                      {!isUserInvolved && 'Third-party transfer'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {/* WhatsApp Reminder Deep Link */}
+                      <button
+                        type="button"
+                        onClick={() => handleSendWhatsAppReminder(debt)}
+                        className="p-2 rounded-xl bg-[#25D366]/15 hover:bg-[#25D366]/25 text-[#25D366] border border-[#25D366]/30 text-xs transition-all active:scale-95"
+                        title="Send WhatsApp Reminder"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Bank Transfer Auto-Copy */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBankTransferDebt(debt)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs transition-all"
+                        title="Bank Transfer Details (Auto-Copy)"
+                      >
+                        <Building className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Bank Info</span>
+                      </button>
+                    </div>
 
                     <button
                       onClick={() => setSelectedDebtToSettle(debt)}
@@ -251,13 +293,112 @@ export const BalancesLedger: React.FC = () => {
                       }`}
                     >
                       <CreditCard className="w-3.5 h-3.5" />
-                      <span>Record Settlement</span>
+                      <span>Record Settle</span>
                     </button>
                   </div>
                 </SpatialCard>
               );
             })}
           </AnimatePresence>
+        </div>
+      )}
+
+      {/* Localized Bank Transfer Auto-Copy Modal (Correction #3) */}
+      {selectedBankTransferDebt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-md glass-3d-volumetric rounded-3xl p-6 border border-white/15 text-[#dae2fd] shadow-2xl relative"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Building className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Bank Transfer Auto-Copy 🇱🇰</h3>
+              </div>
+              <button
+                onClick={() => setSelectedBankTransferDebt(null)}
+                className="p-1.5 rounded-xl bg-white/5 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="my-4 space-y-3">
+              <div className="p-3 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-center">
+                <span className="text-xs text-slate-400">Total Settlement Amount</span>
+                <div className="text-2xl font-extrabold font-mono text-emerald-400 mt-0.5">
+                  {formatCents(selectedBankTransferDebt.amount, currentGroup.currency)}
+                </div>
+              </div>
+
+              {/* Bank Details Rows */}
+              {(() => {
+                const creditor = users.find(u => u.uid === selectedBankTransferDebt.to);
+                const bank = creditor?.bankDetails || {
+                  accountName: creditor?.displayName || 'Creditor Name',
+                  accountNumber: '8001234567',
+                  bankName: 'Commercial Bank of Ceylon',
+                  branch: 'Colombo Main'
+                };
+
+                return (
+                  <div className="space-y-2 text-xs">
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase block font-mono">Account Name</span>
+                        <span className="font-semibold text-white">{bank.accountName}</span>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(bank.accountName || '', 'name')}
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300"
+                      >
+                        {copiedField === 'name' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase block font-mono">Account Number</span>
+                        <span className="font-mono font-bold text-emerald-400 text-sm">{bank.accountNumber}</span>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(bank.accountNumber || '', 'number')}
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300"
+                      >
+                        {copiedField === 'number' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 uppercase block font-mono">Bank & Branch</span>
+                        <span className="font-semibold text-white">{bank.bankName} ({bank.branch})</span>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(`${bank.bankName} - ${bank.branch}`, 'bank')}
+                        className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300"
+                      >
+                        {copiedField === 'bank' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedDebtToSettle(selectedBankTransferDebt);
+                setSelectedBankTransferDebt(null);
+              }}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-black text-xs font-bold shadow-lg"
+            >
+              Transfer Sent? Mark as Settled
+            </button>
+          </motion.div>
         </div>
       )}
 

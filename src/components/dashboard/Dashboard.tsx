@@ -6,6 +6,7 @@ import { CategoryIcon } from '../common/CategoryIcon';
 import { SpatialCard } from '../common/SpatialCard';
 import { SmartAddBar } from './SmartAddBar';
 import { ReceiptModal } from '../common/ReceiptModal';
+import { BudgetOverview } from '../budget/BudgetOverview';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -51,9 +52,9 @@ export const Dashboard: React.FC = () => {
         <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center mb-6 shadow-xl shadow-emerald-500/10">
           <Layers className="w-10 h-10 text-emerald-400" />
         </div>
-        <h2 className="text-2xl font-bold text-white tracking-tight">Welcome to EquiSplit v3.0 🇱🇰</h2>
+        <h2 className="text-2xl font-bold text-white tracking-tight">Welcome to EquiSplit v4.0 🇱🇰</h2>
         <p className="text-slate-400 mt-2 text-sm leading-relaxed">
-          Spatial expense sharing with Multi-Payer splits, Magic Smart Add, receipt attachments, and offline persistence.
+          Ultimate Financial Engine with OCR Receipt Itemization, Envelope Budgeting, Recurring Bills, QR Invites, and Bank CSV Importer.
         </p>
         <button
           id="btn-create-first-group"
@@ -266,6 +267,9 @@ export const Dashboard: React.FC = () => {
           })}
         </div>
       </div>
+
+      {/* Monthly Envelope Budgets with 80% Ambient Warnings */}
+      <BudgetOverview />
 
       {/* Expenses Header with Search Filter */}
       <div className="glass-3d-volumetric rounded-3xl p-6 sm:p-8 border border-white/15">

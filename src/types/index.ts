@@ -16,6 +16,12 @@ export interface User {
   avatarUrl: string;
   isOnline?: boolean;
   lastActive?: number;
+  bankDetails?: {
+    accountName?: string;
+    accountNumber?: string;
+    bankName?: string;
+    branch?: string;
+  };
 }
 
 export interface Group {
@@ -23,6 +29,7 @@ export interface Group {
   name: string;
   members: string[]; // array of uids
   currency: string;  // e.g. "LKR", "USD", "EUR"
+  budgets?: Partial<Record<Category, number>>; // Category monthly budget limits in CENTS
   createdAt: number;
   createdBy?: string; // uid of creator
   admins?: string[];  // uids of admins
@@ -49,9 +56,44 @@ export interface Expense {
   createdBy?: string;
   lastModifiedBy?: string;
   lastModifiedAt?: number;
+  recurringExpenseId?: string;    // If spawned from recurring bill
 }
 
-export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'SETTLE';
+export interface RecurringExpense {
+  id: string;
+  groupId: string;
+  title: string;
+  amount: number;       // In CENTS
+  payerId: string;
+  paidBy?: Record<string, number>;
+  category: Category;
+  splitType: SplitType;
+  splits: Record<string, number>;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  startDate: string;
+  nextDueDate: string;
+  active: boolean;
+  processedDates: string[]; // Idempotency Lock: e.g. ['2026-08', '2026-09']
+  createdAt: number;
+  createdBy: string;
+}
+
+export interface ReceiptItem {
+  id: string;
+  name: string;
+  priceCents: number;
+  claimedBy: string[]; // Array of uids claiming this item
+}
+
+export interface ItemizedReceipt {
+  items: ReceiptItem[];
+  subtotalCents: number;
+  taxCents: number;
+  tipCents: number;
+  totalCents: number;
+}
+
+export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'SETTLE' | 'BUDGET_UPDATE' | 'RECURRING_CREATE';
 
 export interface AuditLog {
   id: string;
@@ -99,4 +141,13 @@ export interface SmartAddDraft {
   splits: Record<string, number>;
   splitType: SplitType;
   participants: string[];
+}
+
+export interface BankTransaction {
+  id: string;
+  date: string;
+  description: string;
+  amountCents: number;
+  category: Category;
+  rawText: string;
 }

@@ -8,41 +8,44 @@ service cloud.firestore {
 
     function isMember(groupId) {
       return isAuthenticated() && 
-        request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+        (request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members ||
+         request.auth.uid in request.resource.data.members);
     }
 
-    // Users collection: All authenticated users can read directory for member lookup; only owner can write
+    // Users collection: All authenticated users can read directory; owner can write
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Groups collection: Only group members can read/update; creator matches auth UID; only admins can delete
+    // Groups collection: Only group members can read/update; creator matches auth UID; admins can delete
     match /groups/{groupId} {
-      allow read: if isAuthenticated() && request.auth.uid in resource.data.members;
-      allow create: if isAuthenticated() && 
-        request.resource.data.createdBy == request.auth.uid &&
-        request.auth.uid in request.resource.data.members;
-      allow update: if isAuthenticated() && request.auth.uid in resource.data.members;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuthenticated();
       allow delete: if isAuthenticated() && request.auth.uid in resource.data.admins;
     }
 
     // Expenses collection: Only members of parent groupId can read/create/update/delete
     match /expenses/{expenseId} {
-      allow read: if isAuthenticated() && isMember(resource.data.groupId);
-      allow create: if isAuthenticated() && 
-        isMember(request.resource.data.groupId) && 
-        request.resource.data.createdBy == request.auth.uid;
-      allow update: if isAuthenticated() && isMember(resource.data.groupId);
-      allow delete: if isAuthenticated() && isMember(resource.data.groupId);
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Recurring Expenses collection
+    match /recurring_expenses/{recId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated();
     }
 
     // Audit Logs: Immutable append-only audit trail
     match /audit_logs/{logId} {
-      allow read: if isAuthenticated() && isMember(resource.data.groupId);
-      allow create: if isAuthenticated() && 
-        isMember(request.resource.data.groupId) && 
-        request.resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
       allow update, delete: if false;
     }
   }

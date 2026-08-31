@@ -15,6 +15,7 @@ import {
 } from '../../utils/debtOptimizer';
 import { compressImage } from '../../utils/imageCompressor';
 import { DataStore } from '../../services/store';
+import { ItemizedReceiptModal } from '../receipts/ItemizedReceiptModal';
 import { 
   X, 
   DollarSign, 
@@ -28,7 +29,10 @@ import {
   Camera,
   Image as ImageIcon,
   Trash2,
-  UploadCloud
+  UploadCloud,
+  Scan,
+  Repeat,
+  RotateCw
 } from 'lucide-react';
 import { CategoryIcon } from '../common/CategoryIcon';
 
@@ -38,6 +42,7 @@ export const AddExpenseModal: React.FC = () => {
     users, 
     currentGroup, 
     addExpense, 
+    createRecurringExpense,
     isAddExpenseOpen, 
     setIsAddExpenseOpen 
   } = useApp();
@@ -56,6 +61,13 @@ export const AddExpenseModal: React.FC = () => {
   const [category, setCategory] = useState<Category>('food');
   const [notes, setNotes] = useState('');
   const [splitType, setSplitType] = useState<SplitType>('EQUAL');
+
+  // Recurring Bill State
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+
+  // OCR Itemized Modal State
+  const [isItemizeModalOpen, setIsItemizeModalOpen] = useState(false);
 
   // Receipt state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +251,31 @@ export const AddExpenseModal: React.FC = () => {
     }
   };
 
+  // OCR Itemized Split Callback
+  const handleApplyItemizedSplits = (result: {
+    totalCents: number;
+    splits: Record<string, number>;
+    itemsDescription: string;
+    receiptBlob: Blob | null;
+    receiptPreview: string | null;
+  }) => {
+    setAmountStr((result.totalCents / 100).toFixed(2));
+    if (!title.trim() || title.startsWith('Itemized:')) {
+      setTitle(result.itemsDescription);
+    }
+    setSplitType('EXACT');
+    
+    // Set exact amounts
+    const exact: Record<string, string> = {};
+    for (const [uid, cents] of Object.entries(result.splits)) {
+      exact[uid] = (cents / 100).toFixed(2);
+    }
+    setExactAmounts(exact);
+
+    if (result.receiptBlob) setReceiptBlob(result.receiptBlob);
+    if (result.receiptPreview) setReceiptPreview(result.receiptPreview);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAddExpenseOpen || !currentGroup || !currentUser) return;
@@ -293,9 +330,32 @@ export const AddExpenseModal: React.FC = () => {
       };
 
       await addExpense(expensePayload);
+
+      // If Recurring Bill is toggled, register in recurring_expenses collection
+      if (isRecurring) {
+        const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+        await createRecurringExpense({
+          groupId: currentGroup.id,
+          title: title.trim(),
+          amount: totalAmountCents,
+          payerId: payerMode === 'single' ? payerId : Object.keys(computedPaidBy)[0] || currentUser.uid,
+          paidBy: computedPaidBy,
+          category,
+          splitType,
+          splits: calculatedSplits,
+          frequency,
+          startDate: date,
+          nextDueDate: date,
+          active: true,
+          processedDates: [currentMonthKey],
+          createdBy: currentUser.uid
+        });
+      }
+
       setIsAddExpenseOpen(false);
       setTitle('');
       setAmountStr('');
+      setIsRecurring(false);
       setReceiptBlob(null);
       setReceiptPreview(null);
     } catch (err: any) {
@@ -332,12 +392,26 @@ export const AddExpenseModal: React.FC = () => {
               Group: <span className="text-slate-200 font-medium">{currentGroup.name}</span>
             </p>
           </div>
-          <button
-            onClick={() => setIsAddExpenseOpen(false)}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              id="btn-scan-itemize-receipt"
+              type="button"
+              onClick={() => setIsItemizeModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+              title="OCR Itemized Receipt Scanner"
+            >
+              <Scan className="w-3.5 h-3.5" />
+              <span>OCR Scanner</span>
+            </button>
+
+            <button
+              onClick={() => setIsAddExpenseOpen(false)}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-6">
@@ -643,7 +717,46 @@ export const AddExpenseModal: React.FC = () => {
             )}
           </div>
 
-          {/* 5. Receipt Photo Upload Section */}
+          {/* 5. Recurring Bill Configuration (Phase 3) */}
+          <div className="p-4 rounded-2xl bg-black/30 border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  id="checkbox-recurring-expense"
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={e => setIsRecurring(e.target.checked)}
+                  className="w-4 h-4 rounded border-white/20 text-emerald-500 focus:ring-0 cursor-pointer"
+                />
+                <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <Repeat className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Make this a recurring bill (Splitwise feature)</span>
+                </span>
+              </label>
+            </div>
+
+            {isRecurring && (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-xs text-slate-400">Frequency:</span>
+                {(['daily', 'weekly', 'monthly'] as const).map(freq => (
+                  <button
+                    key={freq}
+                    type="button"
+                    onClick={() => setFrequency(freq)}
+                    className={`px-3 py-1 rounded-xl text-xs font-semibold capitalize transition-all ${
+                      frequency === freq
+                        ? 'bg-emerald-500 text-black font-bold shadow-sm'
+                        : 'bg-white/5 border border-white/10 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {freq}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 6. Receipt Photo Upload Section */}
           <div className="p-4 rounded-2xl bg-black/30 border border-white/10 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
@@ -691,7 +804,7 @@ export const AddExpenseModal: React.FC = () => {
             )}
           </div>
 
-          {/* 6. Date & Notes */}
+          {/* 7. Date & Notes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
@@ -748,6 +861,13 @@ export const AddExpenseModal: React.FC = () => {
 
         </form>
       </div>
+
+      {/* Itemized OCR Scanner Modal */}
+      <ItemizedReceiptModal
+        isOpen={isItemizeModalOpen}
+        onClose={() => setIsItemizeModalOpen(false)}
+        onApplySplits={handleApplyItemizedSplits}
+      />
     </div>
   );
 };

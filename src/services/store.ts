@@ -8,11 +8,13 @@ import {
   query, 
   where, 
   orderBy, 
-  limit 
+  limit,
+  runTransaction,
+  getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
-import { User, Group, Expense, AuditLog, AuditAction } from '../types';
+import { User, Group, Expense, AuditLog, AuditAction, RecurringExpense, Category } from '../types';
 import { normalizePaidBy } from '../utils/debtOptimizer';
 
 function sanitizePayload<T>(obj: T): T {
@@ -67,6 +69,16 @@ export class DataStore {
       }, { merge: true });
     } catch (err) {
       console.warn('updatePresence warning:', err);
+    }
+  }
+
+  public async updateUserBankDetails(uid: string, bankDetails: User['bankDetails']): Promise<void> {
+    try {
+      await setDoc(doc(db, 'users', uid), {
+        bankDetails
+      }, { merge: true });
+    } catch (err) {
+      console.warn('updateUserBankDetails warning:', err);
     }
   }
 
@@ -191,6 +203,36 @@ export class DataStore {
     }
   }
 
+  // --- Real-time Recurring Expenses Subscription ---
+  public subscribeToRecurringExpenses(groupId: string, callback: (bills: RecurringExpense[]) => void): () => void {
+    if (!groupId) {
+      callback([]);
+      return () => {};
+    }
+
+    try {
+      const q = query(
+        collection(db, 'recurring_expenses'),
+        where('groupId', '==', groupId),
+        where('active', '==', true)
+      );
+
+      return onSnapshot(
+        q,
+        (snapshot) => {
+          const bills = snapshot.docs.map(d => ({ ...d.data() } as RecurringExpense));
+          callback(bills);
+        },
+        (error) => {
+          console.warn('subscribeToRecurringExpenses listener note:', error);
+          callback([]);
+        }
+      );
+    } catch {
+      return () => {};
+    }
+  }
+
   // --- Firebase Storage Receipt Upload ---
   public async uploadReceiptImage(
     groupId: string,
@@ -204,13 +246,166 @@ export class DataStore {
       return downloadUrl;
     } catch (err) {
       console.warn('Firebase Storage upload fallback:', err);
-      // If offline or storage error, convert blob to data URL fallback
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
     }
+  }
+
+  // --- Envelope Budget Management ---
+  public async updateGroupBudgets(
+    groupId: string,
+    budgets: Partial<Record<Category, number>>,
+    user: User
+  ): Promise<void> {
+    const timestamp = Date.now();
+    const logId = 'log-' + timestamp + '-' + Math.random().toString(36).substring(2, 7);
+    const auditLog: AuditLog = {
+      id: logId,
+      groupId,
+      entityId: groupId,
+      action: 'BUDGET_UPDATE',
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Member',
+      userAvatar: user.avatarUrl,
+      timestamp,
+      description: `Updated monthly category budgets`,
+      changes: {
+        newState: budgets
+      }
+    };
+
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'groups', groupId), { budgets }, { merge: true });
+    batch.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+    await batch.commit();
+  }
+
+  // --- Recurring Expense Creation & Idempotent Processor ---
+  public async createRecurringExpense(
+    recurringData: Omit<RecurringExpense, 'id' | 'createdAt'>,
+    user: User
+  ): Promise<RecurringExpense> {
+    const id = 'rec-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const createdAt = Date.now();
+    const newRecurring: RecurringExpense = {
+      ...recurringData,
+      id,
+      createdAt,
+      createdBy: user.uid,
+      processedDates: recurringData.processedDates || []
+    };
+
+    const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+    const auditLog: AuditLog = {
+      id: logId,
+      groupId: recurringData.groupId,
+      entityId: id,
+      action: 'RECURRING_CREATE',
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Member',
+      userAvatar: user.avatarUrl,
+      timestamp: createdAt,
+      description: `Created recurring ${recurringData.frequency} bill "${recurringData.title}" for ${recurringData.amount / 100}`,
+      changes: {
+        newState: newRecurring
+      }
+    };
+
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'recurring_expenses', id), sanitizePayload(newRecurring));
+    batch.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+    await batch.commit();
+
+    return newRecurring;
+  }
+
+  /**
+   * Idempotent Client-Side Recurring Bill Processor.
+   * Uses Firestore runTransaction with processedDates array lock to prevent duplicate writes across concurrent users.
+   */
+  public async processDueRecurringExpenses(groupId: string, user: User): Promise<number> {
+    if (!groupId || !user) return 0;
+
+    let processedCount = 0;
+    try {
+      const q = query(
+        collection(db, 'recurring_expenses'),
+        where('groupId', '==', groupId),
+        where('active', '==', true)
+      );
+      const snapshot = await getDocs(q);
+
+      const now = new Date();
+      const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const todayDateStr = now.toISOString().split('T')[0];
+
+      for (const billDoc of snapshot.docs) {
+        const bill = billDoc.data() as RecurringExpense;
+        const periodKey = bill.frequency === 'monthly' ? currentMonthKey : todayDateStr;
+
+        if (!bill.processedDates?.includes(periodKey)) {
+          // Acquire Transaction Lock
+          const billRef = doc(db, 'recurring_expenses', bill.id);
+
+          await runTransaction(db, async (txn) => {
+            const freshDoc = await txn.get(billRef);
+            if (!freshDoc.exists()) return;
+
+            const freshData = freshDoc.data() as RecurringExpense;
+            if (freshData.processedDates?.includes(periodKey)) {
+              return; // Already processed by another concurrent user
+            }
+
+            const updatedProcessedDates = [...(freshData.processedDates || []), periodKey];
+            const expenseId = 'exp-rec-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+            const createdAt = Date.now();
+
+            const spawnedExpense: Expense = {
+              id: expenseId,
+              groupId: freshData.groupId,
+              title: `🔄 ${freshData.title} (${freshData.frequency})`,
+              amount: freshData.amount,
+              payerId: freshData.payerId,
+              paidBy: freshData.paidBy || { [freshData.payerId]: freshData.amount },
+              date: todayDateStr,
+              category: freshData.category,
+              splitType: freshData.splitType,
+              splits: freshData.splits,
+              notes: `Auto-generated recurring expense for period ${periodKey}`,
+              createdAt,
+              createdBy: user.uid,
+              recurringExpenseId: freshData.id,
+              searchKeywords: generateSearchKeywords(freshData.title, freshData.category)
+            };
+
+            const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+            const auditLog: AuditLog = {
+              id: logId,
+              groupId: freshData.groupId,
+              entityId: expenseId,
+              action: 'CREATE',
+              userId: user.uid,
+              userName: user.displayName || user.email || 'System',
+              userAvatar: user.avatarUrl,
+              timestamp: createdAt,
+              description: `Auto-processed recurring bill "${freshData.title}" for ${periodKey}`,
+              changes: { newState: spawnedExpense }
+            };
+
+            txn.update(billRef, { processedDates: updatedProcessedDates });
+            txn.set(doc(db, 'expenses', expenseId), sanitizePayload(spawnedExpense));
+            txn.set(doc(db, 'audit_logs', logId), sanitizePayload(auditLog));
+            processedCount++;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('processDueRecurringExpenses note:', err);
+    }
+    return processedCount;
   }
 
   // --- Atomic Mutations with Firestore Batch Writes ---
@@ -345,6 +540,17 @@ export class DataStore {
 
     await setDoc(doc(db, 'groups', id), sanitizePayload(newGroup));
     return newGroup;
+  }
+
+  public async joinGroup(groupId: string, user: User): Promise<void> {
+    const groupRef = doc(db, 'groups', groupId);
+    await runTransaction(db, async (txn) => {
+      const gDoc = await txn.get(groupRef);
+      if (!gDoc.exists()) return;
+      const gData = gDoc.data() as Group;
+      const updatedMembers = Array.from(new Set([...(gData.members || []), user.uid]));
+      txn.update(groupRef, { members: updatedMembers });
+    });
   }
 
   public async settleDebt(

@@ -44,6 +44,24 @@ export const ActivityDrawer: React.FC = () => {
           label: 'Settled',
           color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30'
         };
+      case 'BUDGET_UPDATE':
+        return {
+          icon: Edit3,
+          label: 'Budget',
+          color: 'text-purple-400 bg-purple-500/10 border-purple-500/30'
+        };
+      case 'RECURRING_CREATE':
+        return {
+          icon: PlusCircle,
+          label: 'Recurring',
+          color: 'text-teal-400 bg-teal-500/10 border-teal-500/30'
+        };
+      default:
+        return {
+          icon: PlusCircle,
+          label: 'Action',
+          color: 'text-slate-400 bg-white/10 border-white/20'
+        };
     }
   };
 

@@ -19,8 +19,15 @@ export { AddExpenseModal } from './modals/AddExpenseModal';
 export { CreateGroupModal } from './modals/CreateGroupModal';
 export { EditExpenseModal } from './modals/EditExpenseModal';
 
-// Features
+// Features & v4.0 Engines
 export { Dashboard } from './dashboard/Dashboard';
 export { SmartAddBar } from './dashboard/SmartAddBar';
 export { BalancesLedger } from './ledger/BalancesLedger';
 export { CategoryBreakdown } from './analytics/CategoryBreakdown';
+
+// v4.0 Capabilities
+export { ItemizedReceiptModal } from './receipts/ItemizedReceiptModal';
+export { BudgetOverview } from './budget/BudgetOverview';
+export { BudgetSettingsModal } from './budget/BudgetSettingsModal';
+export { GroupInviteModal } from './invites/GroupInviteModal';
+export { BankImportModal } from './bank/BankImportModal';
