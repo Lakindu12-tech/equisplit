@@ -19,9 +19,12 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase safely (avoid duplicate initialization)
+// Note: In Capacitor mobile environments (Android/iOS), the WebView origin is http://localhost.
+// Ensure 'localhost' is listed under Firebase Console -> Authentication -> Settings -> Authorized Domains.
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Modern Modular Multi-Tab IndexedDB Firestore Persistence
 let firestoreDb;

@@ -1,5 +1,5 @@
-import { optimizeDebts, calculateEqualSplits, calculatePercentageSplits, calculateSharesSplits, calculateNetBalances } from '../src/utils/debtOptimizer';
-import { Expense } from '../src/types';
+import { optimizeDebts, calculateEqualSplits, calculatePercentageSplits, calculateSharesSplits, calculateNetBalances, formatCents } from '../../src/utils/debtOptimizer';
+import { Expense } from '../../src/types';
 import assert from 'assert';
 
 console.log('--- STARTING DEBT OPTIMIZATION ALGORITHMIC TESTS ---');
@@ -102,14 +102,12 @@ console.log('--- STARTING DEBT OPTIMIZATION ALGORITHMIC TESTS ---');
 
 // Test 6: LKR Currency Formatting with Comma Separators (150000 cents -> "Rs. 1,500.00")
 {
-  import('../src/utils/debtOptimizer').then(({ formatCents }) => {
-    const formattedPos = formatCents(150000, 'LKR');
-    const formattedNeg = formatCents(-2500000, 'LKR');
-    console.log('Test 6 (LKR formatting):', formattedPos, formattedNeg);
-    assert.strictEqual(formattedPos, 'Rs. 1,500.00');
-    assert.strictEqual(formattedNeg, '-Rs. 25,000.00');
-    console.log('✓ Test 6 PASSED');
-  });
+  const formattedPos = formatCents(150000, 'LKR');
+  const formattedNeg = formatCents(-2500000, 'LKR');
+  console.log('Test 6 (LKR formatting):', formattedPos, formattedNeg);
+  assert.strictEqual(formattedPos, 'Rs. 1,500.00');
+  assert.strictEqual(formattedNeg, '-Rs. 25,000.00');
+  console.log('✓ Test 6 PASSED');
 }
 
 console.log('--- ALL DEBT OPTIMIZATION ALGORITHMIC TESTS PASSED! ---');

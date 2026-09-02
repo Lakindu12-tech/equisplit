@@ -5,7 +5,7 @@ import { formatCents, normalizePaidBy } from '../../utils/debtOptimizer';
 import { CategoryIcon } from '../common/CategoryIcon';
 import { SpatialCard } from '../common/SpatialCard';
 import { SmartAddBar } from './SmartAddBar';
-import { ReceiptModal } from '../common/ReceiptModal';
+import { ReceiptModal } from '../receipts/ReceiptModal';
 import { BudgetOverview } from '../budget/BudgetOverview';
 import { 
   TrendingUp, 

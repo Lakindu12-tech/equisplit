@@ -5,7 +5,6 @@ export { BottomNav } from './layout/BottomNav';
 // Common & Spatial
 export { CategoryIcon } from './common/CategoryIcon';
 export { SpatialCard } from './common/SpatialCard';
-export { ReceiptModal } from './common/ReceiptModal';
 
 // Auth
 export { AuthModal } from './auth/AuthModal';
@@ -25,8 +24,9 @@ export { SmartAddBar } from './dashboard/SmartAddBar';
 export { BalancesLedger } from './ledger/BalancesLedger';
 export { CategoryBreakdown } from './analytics/CategoryBreakdown';
 
-// v4.0 Capabilities
+// Receipts & Modals
 export { ItemizedReceiptModal } from './receipts/ItemizedReceiptModal';
+export { ReceiptModal } from './receipts/ReceiptModal';
 export { BudgetOverview } from './budget/BudgetOverview';
 export { BudgetSettingsModal } from './budget/BudgetSettingsModal';
 export { GroupInviteModal } from './invites/GroupInviteModal';

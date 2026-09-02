@@ -18,11 +18,11 @@ export const BottomNav: React.FC = () => {
   } = useApp();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 pointer-events-none flex justify-center">
+    <div className="fixed bottom-0 left-0 right-0 z-40 p-3 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pointer-events-none flex justify-center">
       <nav className="glass-3d-volumetric px-4 py-2 rounded-3xl shadow-2xl pointer-events-auto flex items-center gap-2 max-w-sm w-full justify-around border border-white/15">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all relative ${
+          className={`flex flex-col items-center justify-center min-h-[48px] min-w-[48px] gap-1 py-1 px-3 rounded-xl transition-all relative select-none active:scale-95 ${
             activeTab === 'dashboard' ? 'text-emerald-400 font-semibold' : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -46,7 +46,7 @@ export const BottomNav: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('ledger')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all relative ${
+          className={`flex flex-col items-center justify-center min-h-[48px] min-w-[48px] gap-1 py-1 px-3 rounded-xl transition-all relative select-none active:scale-95 ${
             activeTab === 'ledger' ? 'text-emerald-400 font-semibold' : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -59,7 +59,7 @@ export const BottomNav: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('insights')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all relative ${
+          className={`flex flex-col items-center justify-center min-h-[48px] min-w-[48px] gap-1 py-1 px-3 rounded-xl transition-all relative select-none active:scale-95 ${
             activeTab === 'insights' ? 'text-emerald-400 font-semibold' : 'text-slate-400 hover:text-white'
           }`}
         >

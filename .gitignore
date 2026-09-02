@@ -65,3 +65,19 @@ playwright/.cache/
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Android build & local paths
+*.apk
+*.aab
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+ios/App/build/
+ios/App/Pods/
+
+# Firebase live credentials (use .example files for templates)
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
+
+

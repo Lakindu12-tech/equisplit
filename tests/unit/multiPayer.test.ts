@@ -4,9 +4,9 @@ import {
   optimizeDebts, 
   calculateRawDebts, 
   normalizePaidBy 
-} from '../src/utils/debtOptimizer';
-import { parseNaturalLanguageExpense } from '../src/utils/nlpParser';
-import { Expense, User } from '../src/types';
+} from '../../src/utils/debtOptimizer';
+import { parseNaturalLanguageExpense } from '../../src/utils/nlpParser';
+import { Expense, User } from '../../src/types';
 
 console.log('--- STARTING MULTI-PAYER & NLP ALGORITHMIC TESTS ---');
 

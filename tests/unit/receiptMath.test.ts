@@ -1,6 +1,6 @@
 import assert from 'assert';
-import { calculateProportionalReceiptSplits } from '../src/utils/receiptMath';
-import { ReceiptItem } from '../src/types';
+import { calculateProportionalReceiptSplits } from '../../src/utils/receiptMath';
+import { ReceiptItem } from '../../src/types';
 
 console.log('--- STARTING PROPORTIONAL RECEIPT MATH TESTS ---');
 

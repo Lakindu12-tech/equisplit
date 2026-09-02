@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppProvider, useApp } from './context/AppContext';
-import { 
+import { useCapacitor } from './hooks/useCapacitor';
+import {
   Navbar, 
   Dashboard, 
   BalancesLedger, 
@@ -16,7 +17,9 @@ import {
 } from './components';
 
 const MainContent: React.FC = () => {
-  const { 
+  useCapacitor();
+
+  const {
     currentUser, 
     isAuthLoading, 
     activeTab, 
@@ -93,7 +96,7 @@ const MainContent: React.FC = () => {
       </div>
 
       {/* Main Content View with Hardware-Accelerated AnimatePresence */}
-      <main className="flex-1 pb-24">
+      <main className="flex-1 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:pb-12">
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' && (
             <motion.div
